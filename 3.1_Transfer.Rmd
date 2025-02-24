@@ -1,0 +1,173 @@
+---
+title: "3.1_Transfer"
+author: "Rasmus Riemer Jakobsen"
+date: "`r Sys.time()`"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+link-citations: yes
+---
+
+```{r setup, include=F, message=F}
+#Set working directory to script directory
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+
+dir.create("results", showWarnings = FALSE, recursive = TRUE)
+
+source("Supplementary_scripts/package_load_install.R")
+source("Supplementary_scripts/utils.R")
+source("Supplementary_scripts/create_stability.R")
+
+subdir_name <- "3.1_Transfer"
+
+#source("Phyloseq_import_CSS_16S_laca.R")
+load("0.3_deduplicated_and_decontaminated.RData")
+
+theme_set(theme_classic())
+
+knitr::opts_chunk$set(fig.width=12, fig.height=8, fig.fullwidth = TRUE,
+                      root.dir = setwd(dirname(rstudioapi::getActiveDocumentContext()$path))) #Set working directory to script directory 
+
+#Coulour pallettes
+col_fil <- pal_jco("default")(10)
+
+col_scale <- scale_color_jco()
+```
+
+```{r knit, echo=F, eval=FALSE}
+rmarkdown::render(
+  input = here("Supplementary_scripts", str_c(subdir_name, ".Rmd")),
+  output_dir = here("results", "reports")
+)
+```
+
+
+
+
+# By relative abundance
+
+# Load data
+
+```{r}
+ps <- PSB
+
+```
+
+```{r, warning = F}
+#ps@sam_data$ID
+
+prep_meta <- as.data.frame(as.matrix(sample_data(PSB))) 
+prep_meta$sample_id <- rownames(prep_meta)
+
+# Remove IDs with <3 entries
+prep_meta <- prep_meta %>% group_by(ID) %>% filter( n() > 3 ) %>% ungroup()
+
+otu <- ps %>%
+  subset_samples(RCID.uniq %in% prep_meta$RCID.uniq) %>%
+  prune_taxa(!taxa_sums(.) == 0, .) %>%
+  otu_table() %>%
+  t %>%
+  as(., "matrix")
+
+```
+
+# beta-diversity
+
+## Bray-Curtis/Jaccard
+
+```{r}
+
+otu.rar <- PSB.rar %>%
+  prune_samples(sample_names(.) %in% rownames(otu), .) %>% 
+  prune_taxa(!taxa_sums(.) == 0, .) %>%
+  otu_table() %>% 
+  t() %>%as(., "matrix")
+
+# Calcilate distances
+load("results/transfer_distances.RData")
+#bc <- vegdist(otu, method = "bray")
+#jacc_rare <- vegdist(otu.rar, method = "jaccard", binary = F)
+#jacc_floor <- vegdist(ifelse((otu / rowSums(otu)) >= 0.001, 1, 0), method = "jaccard", binary = T)
+
+save(list = c("bc",
+              "jacc_rare",
+              "jacc_floor"),
+           file = "results/transfer_distances.RData")
+
+
+all(rownames(otu.rar) ==rownames(otu))
+
+bc.m <- as.matrix(bc)
+all(rownames(bc.m) == prep_meta$sample_id) #TRUE
+```
+
+Note the `binary = FALSE`-flag when calculating Jaccard-index on numeric data (not needed when using already binarized data).
+
+```{r, message = F, evel = F}
+otu_RA <- otu / rowSums(otu)
+intersect_floor <- apply(otu_RA, 1, function(x) apply(otu_RA, 1, function(y) length(intersect(names(x)[x >= 0.001], names(y)[y >= 0.001]))))
+
+save(list = c("intersect_floor"),
+           file = "results/transfer_intersect_floor.RData")
+```
+
+## create dist_df
+
+Add sub-sampling-step similar to Gacesa et al Nature 2022.
+
+```{r}
+subsample_dist_df <- function(dist_df, n_sub = 1000) {
+  
+  dist_df_n <- dist_df %>%
+    add_count(niche_from, niche_to, time_to) 
+  
+  no_sub <- dist_df_n %>%
+    filter(type == "unrelated" & n < n_sub) %>%
+    count(niche_from, niche_to, time_to)
+  
+  dist_df_sub <- bind_rows(
+    dist_df_n %>%
+      filter(type == "related" | (type == "unrelated" & n < n_sub)),
+    dist_df_n %>%
+      filter(type == "unrelated" & n >= n_sub) %>%
+      group_by(niche_from, niche_to, time_to) %>%
+      slice_sample(n = n_sub)
+  ) %>%
+    select(-n) %>%
+    ungroup()
+  
+  return(list(dist_sub = dist_df_sub, no_sub = no_sub))
+}
+
+```
+
+
+
+```{r, message = F}
+
+```
+
+```{r, message = F}
+
+```
+
+```{r, message = F}
+
+```
+
+```{r, message = F}
+
+```
+
+```{r, message = F}
+
+```
+
+```{r, message = F}
+
+```
+
+```{r, message = F}
+
+```

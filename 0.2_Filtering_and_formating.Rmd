@@ -1,0 +1,210 @@
+---
+title: "File loading and preparation"
+author: "Rasmus Riemer Jakobsen"
+date: "`r Sys.time()`"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+link-citations: yes
+---
+
+```{r setup, include=F, message=F}
+#Set working directory to script directory
+#setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+
+dir.create("results", showWarnings = FALSE, recursive = TRUE)
+
+source("Supplementary_scripts/package_load_install.R")
+
+source("Phyloseq_import_CSS_16S_laca.R")
+
+theme_set(theme_classic())
+
+knitr::opts_chunk$set(fig.width=12, fig.height=8, fig.fullwidth = TRUE
+                      #root.dir = setwd(dirname(rstudioapi::getActiveDocumentContext()$path))  #Set working directory to script directory 
+                      )
+
+#Coulour pallettes
+col_fil <- pal_jco("default")(10)
+
+col_scale <- scale_color_jco()
+```
+
+
+# Manual removal and sample id correction
+
+## Remove UMI16S_134_PRJ+UMI16S_135_PRJ as they appear failed and  as no controls are sequenced (therefore not possible to confirm run)
+
+```{r, message = F}
+#PSB.all <- subset_samples(PSB.all, !seq.run %in% c("UMI16S_134_PRJ","UMI16S_135_PRJ","UMI16S_181_MH04")) #
+```
+
+## Remove milk 1+2 re-runs,  as sample IDS seem wrong
+
+```{r, message = F, eval = FALSE}
+PSB.M2.1 <- subset_samples(PSB.all, seq.run %in% "UMI16S_180_MH03" & Run %in% "1")
+PSB.M2.2 <- subset_samples(PSB.all, seq.run %in% "UMI16S_180_MH03" & Run %in% "2")
+
+PSB.M2.1
+PSB.M2.2
+```
+
+# Check B2 milk sized
+
+```{r, message = F}
+subset_samples(PSB.all)
+```
+
+## Remove UMI16S_179_MH02 - B3 Feacal swabs as positive controls seem to have a large shift
+
+```{r, message = F}
+#PSB.all <- subset_samples(PSB.all, !seq.run %in% c("UMI16S_179_MH02"))
+```
+
+## Remove 2nd half of batch 2 milk samples (UMI16S_180_MH03 B) - due to bad controls
+
+```{r, message = F, eval = T}
+#PSB.all <- subset_samples(PSB.all, !seq.run %in% "UMI16S_180_MH03")
+
+# m2.1 <- subset_samples(PSB.all, seq.run %in% "UMI16S_180_MH03" & Run %in% "1")
+# m2.2 <- subset_samples(PSB.all, seq.run %in% "UMI16S_180_MH03" & Run %in% "2")
+# 
+# m2.1
+# m2.2
+# 
+# m2.1.meta <- as.data.frame(sample_data(m2.1))
+# m2.2.meta <- as.data.frame(sample_data(m2.2))
+#PSB.all <- subset_samples(PSB.all, !seq.run %in% "UMI16S_180_MH03" | !Run %in% "2")
+```
+
+## Correction of viginal/rectal swabs
+
+These swabs appear to have been mislabeled in the birth clinic. Some vaginal swabs might not be mislabeled but instead heavily contaminated with faecal matter during birth.
+
+# Replicate samples
+
+##Add add column with unique duplicate identifiers
+
+```{r, message = F}
+## Add unique identifier numbers for for duplicate RCID within each group
+map_mat <- as.data.frame(as.matrix(sample_data(PSB.all)))
+
+map_mat <- map_mat %>% 
+  tidyr::unite(type.id, c("Sample.type","RCID"), remove = F) %>% # Add combined sample type+RCID column
+  mutate(type.id.uniq = make.unique(type.id)) %>% # Add unique ids for all duplicates
+  mutate(unique = isUnique(type.id)) %>% # Add tag for duplicate RCIDs within each sample type 
+  mutate(RCID.uniq = sub(".*?_", "", type.id.uniq)) #Remove sample type for uniqe RCID column
+
+#map_mat$RCID.uniq
+#map_mat$type.id.uniq
+
+# Remove combined type-id columns
+map_mat <- map_mat %>% dplyr::select(-c("type.id","type.id.uniq"))
+
+ids <- subset(map_mat, unique == FALSE)$RCID.uniq
+str_sort(ids,
+numeric=TRUE
+)[1:40]
+
+#Add classes back to data frame
+map_mat <- type.convert(map_mat, as.is = TRUE)
+
+PSB.all@sam_data <-  sample_data(map_mat)
+```
+
+# Remove ASVs by taxonomy
+
+## Remove ASVs assigned as eukaryotes
+
+```{r, message = F}
+#Removed reads
+sum(sample_sums(subset_taxa(PSB.all, Kingdom %in% c("Eukaryota","Archaea"))))/sum(sample_sums(PSB.all))
+
+#Remove unassigned taxa
+PSB.all <- subset_taxa(PSB.all, !Kingdom %in% c("Eukaryota","Archaea"))
+```
+
+## Remove ASVs not assigned at phylum level - not run as none were detected
+
+```{r, message = F,eval=T}
+tax <- data.frame(PSB.all@tax_table)
+
+#Removed reads
+sum(sample_sums(subset_taxa(PSB.all, Phylum %in% c("","Unassigned") | Class %in% c("","Unassigned"))))/sum(sample_sums(PSB.all))
+
+#Remove unassigned taxa
+PSB.all <- subset_taxa(PSB.all, !Phylum %in% c("","Unassigned") | !Class %in% c("","Unassigned"))
+```
+
+4 percent of reads were removed as they were unable to be classified as bacteria at phylum level. Manual blast search revealed that most appeared to be amplified human genomic DNA.
+
+# Remove low-abundance ASVs
+
+Remove taxa not seen found in at least 3 samples with a total count of minimum 1000 reads. This protects against an OTU with small mean & trivially large C.V.
+
+```{r, message = F}
+prev <- 3/nrow(PSB.all@sam_data)
+PSB.all.fil = phyloseq_filter_prevalence(PSB.all, prev.trh = prev, abund.trh = 1000, abund.type = "total", threshold_condition = "AND")
+
+spec <- specnumber(as.matrix(otu_table(PSB.all.fil))) %>% sort(decreasing=FALSE)
+head(spec)
+
+sum(sample_sums(PSB.all.fil))/sum(sample_sums(PSB.all))
+
+PSB.all <- PSB.all.fil
+
+```
+
+93% of reads were kept after filtering
+
+```{r}
+PSB.all
+```
+
+
+# Set class and order of factors
+
+```{r, message = F}
+PSB.all@sam_data$BMI.group <- factor(PSB.all@sam_data$BMI.group, levels = c("Normal","Overweight","Obese"))
+PSB.all@sam_data$Batch <- as.factor(PSB.all@sam_data$Batch)
+PSB.all@sam_data$Run <- as.factor(PSB.all@sam_data$Run)
+```
+
+# Update CSS object
+
+## Remove filtered samples and ASVs
+
+```{r, message = F}
+PSB.CSS.all <- prune_samples(sample_names(PSB.all), PSB.CSS.all)
+
+PSB.CSS.all <- prune_taxa(taxa_names(PSB.all), PSB.CSS.all)
+```
+
+# Update metadata for CSS normalised object
+
+```{r, message = F}
+PSB.CSS.all@sam_data <- PSB.all@sam_data
+```
+
+# Collapse at genus level
+
+```{r}
+PSB.all.genus <- tax_glom(PSB.all,taxrank = "Genus")
+PSB.all.species <- tax_glom(PSB.all,taxrank = "Species")
+```
+
+# Save objects in workspace
+
+```{r, message = F}
+save.image("0.2_Filtered_and_formated.RData")
+
+rm(list = ls())
+```
+
+# SessionInfo
+
+```{r}
+sessionInfo()
+```
+

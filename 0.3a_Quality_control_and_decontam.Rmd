@@ -1,0 +1,2316 @@
+---
+title: "Quality control and decontamination"
+author: "Rasmus Riemer Jakobsen"
+date: "`r Sys.time()`"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+link-citations: yes
+---
+
+```{r setup, include=F, message=F}
+#Set working directory to script directory
+#setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+
+dir.create("results", showWarnings = FALSE, recursive = TRUE)
+
+#Load required packages and install if necessary
+source("Supplementary_scripts/package_load_install.R")
+
+theme_set(theme_classic())
+
+knitr::opts_chunk$set(fig.width=12, fig.height=8, fig.fullwidth = TRUE,
+                      warning = FALSE,
+                      root.dir = setwd(dirname(rstudioapi::getActiveDocumentContext()$path))) #Set working directory to script directory 
+
+#Coulour pallettes
+col_fil <- pal_jco("default")(10)
+
+col_scale <- scale_color_jco()
+```
+
+# Load filtered and formated phyloseq objects
+
+```{r, message = F}
+load("0.2_Filtered_and_formated.RData")
+```
+
+# Validate data import
+
+## Check correct sample mapping file - if empty samples are included 
+
+```{r, message = F}
+nas <- subset_samples(PSB.all, Sample.type %in% NA)
+sample_sums(nas) 
+```
+
+Rectal swab BRK74_UMI16S133_RRJ has only 33 reads so is likely just light contamination
+
+## Check 
+
+```{r, message = F}
+## Check each group
+faec <- subset_samples(PSB.all,Sample.type == "Faecal sample")
+levels(as.factor(faec@sam_data$Run))
+levels(as.factor(faec@sam_data$Set))
+
+milk <- subset_samples(PSB.all,Sample.type == "Milk")
+levels(as.factor(milk@sam_data$Run))
+levels(as.factor(milk@sam_data$Set))
+#subset_samples(PSB.all,Sample.type == "Milk" & Batch == 3 & Set == 3 )@sam_data$RC.id
+#subset_samples(PSB.all,Sample.type == "Milk" & Batch == 3 & Set == 3 )@sam_data %>% rownames()
+
+rec <- subset_samples(PSB.all,Sample.type == "Rectal swab")
+levels(as.factor(rec@sam_data$Run))
+levels(as.factor(rec@sam_data$Set))
+
+vag <- subset_samples(PSB.all,Sample.type == "Vaginal swab")
+levels(as.factor(vag@sam_data$Run))
+levels(as.factor(vag@sam_data$Set))
+
+vag <- subset_samples(PSB.all,Sample.type == "Vaginal swab")
+levels(as.factor(vag@sam_data$Run))
+levels(as.factor(vag@sam_data$Set))
+
+vag <- subset_samples(PSB.all,Sample.type == "Vaginal swab")
+levels(as.factor(vag@sam_data$Run))
+levels(as.factor(vag@sam_data$Set))
+```
+
+## Check each library
+
+### Check each run
+
+```{r, message = F}
+#Make combined column for subsetting
+PSB.all@sam_data$type.batch.run <- paste(PSB.all@sam_data$Sample.type,PSB.all@sam_data$Batch,PSB.all@sam_data$Run)
+
+ps.sub <- subset_samples(PSB.all, Sample.type != "Control") %>%
+  subset_taxa(Phylum != "")
+
+#Collapse to genus level
+bac.phyl <- tax_glom(ps.sub, "Genus", NArm = FALSE)
+
+ps0 <- transform_sample_counts(bac.phyl, function(x) x / sum(x))
+
+ps0<- merge_samples(ps0, "type.batch.run")
+ps0 <- transform_sample_counts(ps0, function(x) x / sum(x))
+
+#Create melted dataframe
+df <- psmelt(ps0)
+
+#Select last non-empty taxonomic rank
+df[df==""] <- NA
+df$tax <- apply(df, 1, function(x) tail(na.omit(x), 1))
+
+#Arrange samples by mean abundance
+top <- df %>%
+  group_by(tax) %>%
+  dplyr::summarize(Mean = mean(Abundance)) %>%
+  arrange(-Mean)
+#Show top
+#top
+
+top10 <- top$tax[1:10]
+df0 <- df %>%
+  mutate(tax = fct_other(tax, c(as.matrix(top10))))
+
+df0 <- df0[order(df0$Sample, decreasing = TRUE), ]
+
+#Set order for samples
+#df0$Treatment <- factor(df0$Treatment, levels = c("Control", "Amp", "FOP", "LM", "LM+Amp", "LM+FOP"))
+
+#Set Hours as factor
+#$Hours <- factor(df0$Hours, levels = c("3h", "6h", "24h"))
+
+barplot.type.batch.run.col <- ggplot(df0, aes(Sample, Abundance, fill = fct_reorder(tax, Abundance, .fun = mean))) +
+  geom_col(width = 0.8) +
+  scale_fill_jco(name = "Taxonomy") +
+  scale_fill_manual(values=rep(col_fil,5),name="Genus")+
+  theme_classic() +
+  theme(axis.line=element_line(size=0.5),
+        #panel.border = element_blank(),
+        axis.text=element_text(size = 12, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        axis.text.x=element_text(angle = -45, vjust = 0.8, hjust = 0),
+        strip.text.x = element_text(angle = 0,  face = "bold"),
+        legend.key.height = unit(0.5, 'cm'),
+        legend.text = element_text(face = "italic"),
+        text = element_text(family = 'serif', size = 12)
+        #legend.position = "none")
+  ) +
+  ylab("Relative abundance")
+  #facet_wrap(c("Sample.type","Batch","Run"),nrow=1,scales="free_x")
+
+
+barplot.type.batch.run.col
+```
+
+
+```{r, message = F, eval = F}
+subset_samples(PSB.all, seq.run == "UMI16S_132_RRJ")@sam_data #B1VS1SK1
+subset_samples(PSB.all, seq.run == "UMI16S_134_PRJ")@sam_data
+subset_samples(PSB.all, seq.run == "UMI16S048")@sam_data
+subset_samples(PSB.all, seq.run == "UMI16S048")@sam_data
+subset_samples(PSB.all, seq.run == "UMI16S048")@sam_data
+subset_samples(PSB.all, seq.run == "UMI16S048")@sam_data
+subset_samples(PSB.all, seq.run == "UMI16S048")@sam_data
+subset_samples(PSB.all, seq.run == "UMI16S048")@sam_data
+```
+
+# Negative + postive controls
+
+## Barplots
+
+### All controls
+
+```{r, message = F}
+load("0.2_Filtered_and_formated.RData")
+
+PSB.c <- subset_samples(PSB.all.genus, Sample.type == "Control")
+PSB.c <- subset_taxa(PSB.c, Phylum != "")
+
+ps0 <- transform_sample_counts(PSB.c, function(x) x / sum(x))
+
+#ps0<- merge_samples(ps0, "Time")
+#ps0 <- transform_sample_counts(ps0, function(x) x / sum(x))
+
+#Create melted dataframe
+df <- psmelt(ps0)
+
+#Select last non-empty taxonomic rank
+df[df==""] <- NA
+df$tax <- apply(df, 1, function(x) tail(na.omit(x), 1))
+
+#Arrange samples by mean abundance
+top <- df %>%
+  group_by(tax) %>%
+  dplyr::summarize(Mean = mean(Abundance)) %>%
+  arrange(-Mean)
+#Show top
+#top
+
+top10 <- top$tax[1:10]
+df0 <- df %>%
+  mutate(tax = fct_other(tax, c(as.matrix(top10))))
+
+df0 <- df0[order(df0$Sample, decreasing = TRUE), ]
+
+#Set order for samples
+#df0$Treatment <- factor(df0$Treatment, levels = c("Control", "Amp", "FOP", "LM", "LM+Amp", "LM+FOP"))
+
+#Set Hours as factor
+#$Hours <- factor(df0$Hours, levels = c("3h", "6h", "24h"))
+
+barplot.controls <- ggplot(df0, aes(RC.id, Abundance, fill = fct_reorder(tax, Abundance, .fun = mean))) +
+  geom_col(width = 0.8) +
+  scale_fill_jco(name = "Taxonomy") +
+  scale_fill_manual(values=rep(col_fil,5),name="Genus")+
+  theme_classic() +
+  theme(axis.line=element_line(size=0.5),
+        #panel.border = element_blank(),
+        axis.text=element_text(size = 12, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        axis.text.x=element_text(angle = -45, vjust = 0.8, hjust = 0),
+        strip.text.x = element_text(angle = 0,  face = "bold"),
+        legend.key.height = unit(0.5, 'cm'),
+        legend.text = element_text(face = "italic"),
+        text = element_text(family = 'serif', size = 12)
+        #legend.position = "none")
+  ) +
+  ylab("Relative abundance")+
+  facet_wrap("Batch",nrow=1,scales="free_x")
+
+
+barplot.controls
+```
+
+### All controls by seq run
+
+```{r, message = F}
+
+load("0.2_Filtered_and_formated.RData")
+
+bac.phyl <- subset_samples(PSB.all.genus, Sample.type == "Control")
+
+ps0 <- transform_sample_counts(bac.phyl, function(x) x / sum(x))
+
+#ps1<- merge_samples(ps0, "Time")
+
+#ps1 <- transform_sample_counts(ps0, function(x) x / sum(x))
+
+
+#Create melted dataframe
+df <- psmelt(ps0)
+
+#Select last non-empty taxonomic rank
+df[df==""] <- NA
+df$tax <- apply(df, 1, function(x) tail(na.omit(x), 1))
+
+#Arrange samples by mean abundance
+top <- df %>%
+  group_by(tax) %>%
+  dplyr::summarize(Mean = mean(Abundance)) %>%
+  arrange(-Mean)
+#Show top
+#top  
+
+top10 <- top$tax[1:10]
+df0 <- df %>%
+  mutate(tax = fct_other(tax, c(as.matrix(top10))))
+
+df0 <- df0[order(df0$Sample, decreasing = TRUE), ]
+
+#Set order for samples
+#df0$Treatment <- factor(df0$Treatment, levels = c("Control", "Amp", "FOP", "LM", "LM+Amp", "LM+FOP"))
+
+#Set Hours as factor
+#$Hours <- factor(df0$Hours, levels = c("3h", "6h", "24h"))
+
+barplot.controls.seq.run <- ggplot(df0, aes(RC.id, Abundance, fill = fct_reorder(tax, Abundance, .fun = mean))) +
+  geom_col(width = 0.8) +
+  scale_fill_jco(name = "Taxonomy") +
+  scale_fill_manual(values=rep(col_fil,5),name="Genus")+
+  theme_classic() +
+  theme(axis.line=element_line(size=0.5),
+        #panel.border = element_blank(),
+        axis.text=element_text(size = 12, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        axis.text.x=element_text(angle = -45, vjust = 0.8, hjust = 0),
+        strip.text.x = element_text(angle = 0,  face = "bold"),
+        legend.key.height = unit(0.5, 'cm'),
+        legend.text = element_text(face = "italic"),
+        text = element_text(family = 'serif', size = 12)
+        #legend.position = "none")
+  ) +
+  ylab("Relative abundance")+
+  facet_wrap(c("seq.run","Sample.type"),nrow=2,scales="free_x")
+
+
+barplot.controls.seq.run
+
+ggsave("barplot.controls.seq.run.pdf",width=25,height=8)
+
+```
+
+### All samples by seq.run
+
+```{r, message = F, fig.width=12, fig.height=30}
+load("0.2_Filtered_and_formated.RData")
+
+bac.phyl <- PSB.all.genus
+
+ps0 <- transform_sample_counts(bac.phyl, function(x) x / sum(x))
+
+#ps1<- merge_samples(ps0, "Time")
+
+#ps1 <- transform_sample_counts(ps0, function(x) x / sum(x))
+
+
+#Create melted dataframe
+df <- psmelt(ps0)
+
+#Select last non-empty taxonomic rank
+df[df==""] <- NA
+df$tax <- apply(df, 1, function(x) tail(na.omit(x), 1))
+
+#Arrange samples by mean abundance
+top <- df %>%
+  group_by(tax) %>%
+  dplyr::summarize(Mean = mean(Abundance)) %>%
+  arrange(-Mean)
+#Show top
+#top
+
+top10 <- top$tax[1:10]
+df0 <- df %>%
+  mutate(tax = fct_other(tax, c(as.matrix(top10))))
+
+df0 <- df0[order(df0$Sample, decreasing = TRUE), ]
+
+#Set order for samples
+#df0$Treatment <- factor(df0$Treatment, levels = c("Control", "Amp", "FOP", "LM", "LM+Amp", "LM+FOP"))
+
+#Set Hours as factor
+#$Hours <- factor(df0$Hours, levels = c("3h", "6h", "24h"))
+
+barplot.all.seq.run <- ggplot(df0, aes(RCID.uniq, Abundance, fill = fct_reorder(tax, Abundance, .fun = mean))) +
+  geom_col(width = 0.8) +
+  scale_fill_jco(name = "Taxonomy") +
+  scale_fill_manual(values=rep(col_fil,5),name="Genus")+
+  theme_classic() +
+  theme(axis.line=element_line(size=0.5),
+        #panel.border = element_blank(),
+        axis.text=element_text(size = 12, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        axis.text.x=element_text(angle = -45, vjust = 0.8, hjust = 0),
+        strip.text.x = element_text(angle = 0,  face = "bold"),
+        legend.key.height = unit(0.5, 'cm'),
+        legend.text = element_text(face = "italic"),
+        text = element_text(family = 'serif', size = 12)
+        #legend.position = "none")
+  ) +
+  ylab("Relative abundance")+
+  facet_wrap(c("seq.run","Sample.type"),scales="free_x")
+
+
+barplot.all.seq.run
+
+ggsave("barplot.all.seq.run.pdf",barplot.all.seq.run,width=40,height=40,limitsize = FALSE)
+
+```
+
+### Subset only genera found in positive controls
+
+```{r, message = F}
+load("0.2_Filtered_and_formated.RData")
+
+PSB.all.genus.R <- transform_sample_counts(PSB.all.genus, function(x) x / sum(x))
+
+# PSB.mock.genera.R <- subset_taxa(PSB.all.genus.R, Genus %in% c("Akkermansia","Streptococcus","Bifidobacterium","Erysipelatoclostridium","Escherichia−Shigella", "Escherichia", "Faecalibacterium","Lacticaseibacillus","Bacteroides")
+# )
+
+PSB.mock.genera.R <- subset_taxa(PSB.all.genus.R, Genus %in% c("Akkermansia","Streptococcus","Bifidobacterium","Erysipelatoclostridium", "Lactobacillus", "Escherichia-Shigella", "Faecalibacterium","Lacticaseibacillus","Bacteroides")
+)
+
+tax <- as.data.frame(PSB.all.genus@tax_table)
+
+ps0 <- PSB.mock.genera.R
+
+#ps0 <- transform_sample_counts(bac.phyl, function(x) x / sum(x))
+
+#ps1<- merge_samples(ps0, "Time")
+
+#ps1 <- transform_sample_counts(ps0, function(x) x / sum(x))
+
+
+#Create melted dataframe
+df <- psmelt(ps0)
+
+#Select last non-empty taxonomic rank
+df[df==""] <- NA
+df$tax <- apply(df, 1, function(x) tail(na.omit(x), 1))
+
+#Arrange samples by mean abundance
+top <- df %>%
+  group_by(tax) %>%
+  dplyr::summarize(Mean = mean(Abundance)) %>%
+  arrange(-Mean)
+#Show top
+#top
+
+top10 <- top$tax[1:10]
+df0 <- df %>%
+  mutate(tax = fct_other(tax, c(as.matrix(top10))))
+
+df0 <- df0[order(df0$Sample, decreasing = TRUE), ]
+
+#Set order for samples
+#df0$Treatment <- factor(df0$Treatment, levels = c("Control", "Amp", "FOP", "LM", "LM+Amp", "LM+FOP"))
+
+#Set Hours as factor
+#$Hours <- factor(df0$Hours, levels = c("3h", "6h", "24h"))
+
+barplot.all.seq.mock.genera <- ggplot(df0, aes(RCID.uniq, Abundance, fill = fct_reorder(tax, Abundance, .fun = mean))) +
+  geom_col(width = 0.8) +
+  scale_fill_jco(name = "Taxonomy") +
+  scale_fill_manual(values=rep(col_fil,5),name="Genus")+
+  theme_classic() +
+  theme(
+        #strip.background = element_rect(colour = "white", fill = "white"),
+        axis.text.x=element_text(angle = -45, vjust = 0.8, hjust = 0),
+        strip.text.x = element_text(angle = 0,  face = "bold"),
+        legend.key.height = unit(0.5, 'cm'),
+        legend.text = element_text(face = "italic"),
+        text = element_text(family = 'serif', size = 12)
+        #legend.position = "none")
+  ) +
+  ylab("Relative abundance")+
+  facet_wrap(c("seq.run","Run"),
+             scales="free_x")
+
+
+barplot.all.seq.mock.genera
+
+
+ggsave("barplot.all.seq.mock.genera.pdf",barplot.all.seq.mock.genera,width=50,height=50,limitsize = FALSE)
+```
+
+## Sample counts for postive, negative, PCR controls
+
+```{r, message = F}
+load("0.2_Filtered_and_formated.RData")
+
+PSB.c <- subset_samples(PSB.all, Sample.type == "Control")
+
+meta.c <- as.data.frame(as.matrix(sample_data(PSB.c)))
+meta.c$read.count <- sample_sums(PSB.c)
+
+ggplot(meta.c,aes(read.count, fill=Control)) +
+  geom_histogram() +
+  facet_wrap(c("seq.run","Run")) +
+  scale_x_log10()
+```
+
+## PCoA plots for controls
+
+```{r, eval = T, include = T, echo = F, massage = F, warning = F}
+#Do PCoA ordination based on Bray-curtis distance
+GP.ord <- ordinate(PSB.CSS.all, "PCoA", "bray")
+
+#####################Run + Batch
+
+beta.id = plot_ordination(PSB.CSS.all, GP.ord, color="Control") + 
+  stat_ellipse(geom = "polygon", level = 0.95, fill = NA, size = 1) +
+  #scale_fill_manual(values= col_fil) +
+  #scale_color_manual(values = col_fil) +
+  theme_classic() + 
+  theme(text = element_text(size = 12, family = 'serif'),
+        axis.line=element_line(size=1),
+        axis.text=element_text(size = 12, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        #axis.text.x=element_text(angle = 45, hjust = 1),
+        strip.text.x = element_text(size = 12, angle = 0),
+        legend.text = element_text(size = 12)
+        #legend.position = "none"
+  ) +
+  facet_wrap(~seq.run,scales="free")
+
+beta.id
+```
+
+
+# Batch/run effects
+
+## All
+
+### Sample types
+
+```{r, eval = T, include = T, echo = F, massage = F}
+#Do PCoA ordination based on Bray-curtis distance
+GP.ord <- ordinate(PSB.CSS.all, "PCoA", "bray")
+
+#####################Run + Batch
+
+#PSB.CSS@sam_data$Run <- as.factor(PSB.CSS@sam_data$Run)
+
+PSB.CSS.all@sam_data$Batch <- as.factor(PSB.CSS.all@sam_data$Batch)
+
+beta.id = plot_ordination(PSB.CSS.all, GP.ord, color="Batch") + 
+  stat_ellipse(geom = "polygon", level = 0.95, fill = NA, size = 1) +
+  #scale_fill_manual(values= col_fil) +
+  #scale_color_manual(values = col_fil) +
+  theme_classic() + 
+  theme(text = element_text(size = 12, family = 'serif'),
+        axis.line=element_line(size=1),
+        axis.text=element_text(size = 12, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        #axis.text.x=element_text(angle = 45, hjust = 1),
+        strip.text.x = element_text(size = 12, angle = 0),
+        legend.text = element_text(size = 12)
+        #legend.position = "none"
+  ) +
+  facet_wrap(~Sample.type,scales="free")
+
+beta.id
+```
+
+
+### Runs by batch + sample type
+
+```{r, eval = T, include = T, echo = F, massage = F}
+#Do PCoA ordination based on Bray-curtis distance
+PSB.CSS.all@sam_data$Set <- as.factor(PSB.CSS.all@sam_data$Set)
+GP.ord <- ordinate(PSB.CSS.all, "PCoA", "bray")
+
+#####################Run + Batch
+
+#PSB.CSS@sam_data$Run <- as.factor(PSB.CSS@sam_data$Run)
+
+PSB.CSS.all@sam_data$Run <- as.factor(PSB.CSS.all@sam_data$Run)
+
+beta.type.batch = plot_ordination(PSB.CSS.all, GP.ord, color="Run") + 
+  stat_ellipse(geom = "polygon", level = 0.95, fill = NA, size = 1) +
+  #scale_fill_manual(values= col_fil) +
+  #scale_color_manual(values = col_fil) +
+  theme_classic() + 
+  theme(text = element_text(size = 12, family = 'serif'),
+        axis.line=element_line(size=1),
+        axis.text=element_text(size = 12, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        #axis.text.x=element_text(angle = 45, hjust = 1),
+        strip.text.x = element_text(size = 12, angle = 0),
+        legend.text = element_text(size = 12)
+        #legend.position = "none"
+  ) +
+  facet_wrap(~Sample.type+Batch,scales="free")
+
+beta.type.batch
+```
+
+### Sets by batch + sample type
+
+```{r, eval = T, include = T, echo = F, massage = F}
+#Do PCoA ordination based on Bray-curtis distance
+PSB.CSS.all@sam_data$Set <- as.factor(PSB.CSS.all@sam_data$Set)
+GP.ord <- ordinate(PSB.CSS.all, "PCoA", "bray")
+
+#####################Run + Batch
+
+#PSB.CSS@sam_data$Run <- as.factor(PSB.CSS@sam_data$Run)
+
+PSB.CSS.all@sam_data$Batch <- as.factor(PSB.CSS.all@sam_data$Batch)
+
+beta.type.batch = plot_ordination(PSB.CSS.all, GP.ord, color="Set") + 
+  stat_ellipse(geom = "polygon", level = 0.95, fill = NA, size = 1) +
+  #scale_fill_manual(values= col_fil) +
+  #scale_color_manual(values = col_fil) +
+  theme_classic() + 
+  theme(text = element_text(size = 12, family = 'serif'),
+        axis.line=element_line(size=1),
+        axis.text=element_text(size = 12, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        #axis.text.x=element_text(angle = 45, hjust = 1),
+        strip.text.x = element_text(size = 12, angle = 0),
+        legend.text = element_text(size = 12)
+        #legend.position = "none"
+  ) +
+  facet_wrap(~Sample.type+Batch,scales="free")
+
+beta.type.batch
+```
+
+### Faecal samples
+
+#### Bray curtis
+
+```{r, eval = T, include = T, echo = F, massage = F}
+load("0.2_Filtered_and_formated.RData")
+
+ps <- subset_samples(PSB.CSS.all, Sample.type == "Faecal sample")
+
+#Do PCoA ordination based on Bray-curtis distance
+GP.ord <- ordinate(ps, "PCoA", "bray")
+
+#####################Run + Batch
+
+#PSB.CSS@sam_data$Run <- as.factor(PSB.CSS@sam_data$Run)
+
+ps@sam_data$ps <- as.factor(ps@sam_data$Batch)
+
+beta.batch.faeces = plot_ordination(ps, GP.ord, color="Batch") + 
+  stat_ellipse(geom = "polygon", level = 0.95, fill = NA, size = 1) +
+  #scale_fill_manual(values= col_fil) +
+  #scale_color_manual(values = col_fil) +
+  theme_classic() + 
+  theme(text = element_text(size = 12, family = 'serif'),
+        axis.line=element_line(size=1),
+        axis.text=element_text(size = 12, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        #axis.text.x=element_text(angle = 45, hjust = 1),
+        strip.text.x = element_text(size = 12, angle = 0),
+        legend.text = element_text(size = 12)
+        #legend.position = "none"
+  ) +
+  ggtitle("Bray Curtis - non collapsed")
+
+beta.batch.faeces
+```
+
+#### Bray curtis - species collapsed
+
+```{r, eval = T, include = T, echo = F, massage = F}
+load("0.2_Filtered_and_formated.RData")
+
+ps <- subset_samples(
+  PSB.CSS.all, Sample.type == "Faecal sample") %>% tax_glom(taxrank = "Species")
+
+
+#Do PCoA ordination based on Bray-curtis distance
+GP.ord <- ordinate(ps, "PCoA", "bray")
+
+#####################Run + Batch
+
+#PSB.CSS@sam_data$Run <- as.factor(PSB.CSS@sam_data$Run)
+
+ps@sam_data$ps <- as.factor(ps@sam_data$Batch)
+
+beta.batch.faeces.species = plot_ordination(ps, GP.ord, color="Batch") + 
+  stat_ellipse(geom = "polygon", level = 0.95, fill = NA, size = 1) +
+  #scale_fill_manual(values= col_fil) +
+  #scale_color_manual(values = col_fil) +
+  theme_classic() + 
+  theme(text = element_text(size = 12, family = 'serif'),
+        axis.line=element_line(size=1),
+        axis.text=element_text(size = 12, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        #axis.text.x=element_text(angle = 45, hjust = 1),
+        strip.text.x = element_text(size = 12, angle = 0),
+        legend.text = element_text(size = 12)
+        #legend.position = "none"
+  )+
+  ggtitle("Bray Curtis - species collapsed")
+
+beta.batch.faeces.species
+```
+
+#### Bray curtis - genus collapsed
+
+```{r, eval = T, include = T, echo = F, massage = F}
+load("0.2_Filtered_and_formated.RData")
+
+ps <- subset_samples(
+  PSB.CSS.all, Sample.type == "Faecal sample") %>%
+  tax_glom(taxrank = "Genus")
+
+
+#Do PCoA ordination based on Bray-curtis distance
+GP.ord <- ordinate(ps, "PCoA", "bray")
+
+#####################Run + Batch
+
+#PSB.CSS@sam_data$Run <- as.factor(PSB.CSS@sam_data$Run)
+
+ps@sam_data$ps <- as.factor(ps@sam_data$Batch)
+
+beta.batch.faeces.genus = plot_ordination(ps, GP.ord, color="Batch") + 
+  stat_ellipse(geom = "polygon", level = 0.95, fill = NA, size = 1) +
+  #scale_fill_manual(values= col_fil) +
+  #scale_color_manual(values = col_fil) +
+  theme_classic() + 
+  theme(text = element_text(size = 12, family = 'serif'),
+        axis.line=element_line(size=1),
+        axis.text=element_text(size = 12, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        #axis.text.x=element_text(angle = 45, hjust = 1),
+        strip.text.x = element_text(size = 12, angle = 0),
+        legend.text = element_text(size = 12)
+        #legend.position = "none"
+  )+
+  ggtitle("Bray Curtis - Genus")
+
+beta.batch.faeces.genus
+```
+
+
+```{r, eval = T, include = T, echo = F, massage = F, warning = F}
+ggarrange(beta.batch.faeces,beta.batch.faeces.species,beta.batch.faeces.genus,beta.batch.faeces.wunifrac)
+```
+
+### Feacal samples - decontaminated
+
+#### Bray curtis
+
+```{r, eval = T, include = T, echo = F, massage = F}
+load("0.3_deduplicated_and_decontaminated.RData")
+
+ps <- subset_samples(PSB.CSS, Sample.type == "Faecal sample")
+
+#Do PCoA ordination based on Bray-curtis distance
+GP.ord <- ordinate(ps, "PCoA", "bray")
+
+#####################Run + Batch
+
+#PSB.CSS@sam_data$Run <- as.factor(PSB.CSS@sam_data$Run)
+
+ps@sam_data$ps <- as.factor(ps@sam_data$Batch)
+
+beta.batch.faeces = plot_ordination(ps, GP.ord, color="Batch") + 
+  stat_ellipse(geom = "polygon", level = 0.95, fill = NA, size = 1) +
+  #scale_fill_manual(values= col_fil) +
+  #scale_color_manual(values = col_fil) +
+  theme_classic() + 
+  theme(text = element_text(size = 12, family = 'serif'),
+        axis.line=element_line(size=1),
+        axis.text=element_text(size = 12, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        #axis.text.x=element_text(angle = 45, hjust = 1),
+        strip.text.x = element_text(size = 12, angle = 0),
+        legend.text = element_text(size = 12)
+        #legend.position = "none"
+  ) +
+  ggtitle("Bray Curtis - non collapsed")
+
+beta.batch.faeces
+```
+
+#### Bray curtis - species collapsed
+
+```{r, eval = T, include = T, echo = F, massage = F}
+load("0.3_deduplicated_and_decontaminated.RData")
+
+ps <- subset_samples(
+  PSB.CSS, Sample.type == "Faecal sample") %>% tax_glom(taxrank = "Species")
+
+
+#Do PCoA ordination based on Bray-curtis distance
+GP.ord <- ordinate(ps, "PCoA", "bray")
+
+#####################Run + Batch
+
+#PSB.CSS@sam_data$Run <- as.factor(PSB.CSS@sam_data$Run)
+
+ps@sam_data$ps <- as.factor(ps@sam_data$Batch)
+
+beta.batch.faeces.species = plot_ordination(ps, GP.ord, color="Batch") + 
+  stat_ellipse(geom = "polygon", level = 0.95, fill = NA, size = 1) +
+  #scale_fill_manual(values= col_fil) +
+  #scale_color_manual(values = col_fil) +
+  theme_classic() + 
+  theme(text = element_text(size = 12, family = 'serif'),
+        axis.line=element_line(size=1),
+        axis.text=element_text(size = 12, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        #axis.text.x=element_text(angle = 45, hjust = 1),
+        strip.text.x = element_text(size = 12, angle = 0),
+        legend.text = element_text(size = 12)
+        #legend.position = "none"
+  )+
+  ggtitle("Bray Curtis - species collapsed")
+
+beta.batch.faeces.species
+```
+
+#### Bray curtis - genus collapsed
+
+```{r, eval = T, include = T, echo = F, massage = F}
+load("0.3_deduplicated_and_decontaminated.RData")
+
+ps <- subset_samples(
+  PSB.CSS, Sample.type == "Faecal sample") %>%
+  tax_glom(taxrank = "Genus")
+
+
+#Do PCoA ordination based on Bray-curtis distance
+GP.ord <- ordinate(ps, "PCoA", "bray")
+
+#####################Run + Batch
+
+#PSB.CSS@sam_data$Run <- as.factor(PSB.CSS@sam_data$Run)
+
+ps@sam_data$ps <- as.factor(ps@sam_data$Batch)
+
+beta.batch.faeces.genus = plot_ordination(ps, GP.ord, color="Batch") + 
+  stat_ellipse(geom = "polygon", level = 0.95, fill = NA, size = 1) +
+  #scale_fill_manual(values= col_fil) +
+  #scale_color_manual(values = col_fil) +
+  theme_classic() + 
+  theme(text = element_text(size = 12, family = 'serif'),
+        axis.line=element_line(size=1),
+        axis.text=element_text(size = 12, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        #axis.text.x=element_text(angle = 45, hjust = 1),
+        strip.text.x = element_text(size = 12, angle = 0),
+        legend.text = element_text(size = 12)
+        #legend.position = "none"
+  )+
+  ggtitle("Bray Curtis - Genus")
+
+beta.batch.faeces.genus
+```
+
+
+```{r, eval = T, include = T, echo = F, massage = F, warning = F}
+ggarrange(beta.batch.faeces,beta.batch.faeces.species,beta.batch.faeces.genus,)
+```
+
+### Feacal batch 1
+
+#### Barplots per run - genus
+
+```{r, message = F}
+#Make combined column for subsetting
+PSB.all@sam_data$type.batch.run <- paste(PSB.all@sam_data$Sample.type,PSB.all@sam_data$Batch,PSB.all@sam_data$Run)
+
+ps.sub <- subset_samples(PSB.all, Sample.type != "Control") %>%
+  subset_samples(Sample.type == "Faecal sample" & Batch == 1)
+
+#Collapse to genus level
+bac.phyl <- tax_glom(ps.sub, "Genus", NArm = FALSE)
+
+ps0 <- transform_sample_counts(bac.phyl, function(x) x / sum(x))
+
+ps0<- merge_samples(ps0, "type.batch.run")
+ps0 <- transform_sample_counts(ps0, function(x) x / sum(x))
+
+#Create melted dataframe
+df <- psmelt(ps0)
+
+#Select last non-empty taxonomic rank
+df[df==""] <- NA
+df$tax <- apply(df, 1, function(x) tail(na.omit(x), 1))
+
+#Arrange samples by mean abundance
+top <- df %>%
+  group_by(tax) %>%
+  dplyr::summarize(Mean = mean(Abundance)) %>%
+  arrange(-Mean)
+#Show top
+#top
+
+top10 <- top$tax[1:10]
+df0 <- df %>%
+  mutate(tax = fct_other(tax, c(as.matrix(top10))))
+
+df0 <- df0[order(df0$Sample, decreasing = TRUE), ]
+
+#Set order for samples
+#df0$Treatment <- factor(df0$Treatment, levels = c("Control", "Amp", "FOP", "LM", "LM+Amp", "LM+FOP"))
+
+#Set Hours as factor
+#$Hours <- factor(df0$Hours, levels = c("3h", "6h", "24h"))
+
+barplot.type.batch.run.col <- ggplot(df0, aes(Sample, Abundance, fill = fct_reorder(tax, Abundance, .fun = mean))) +
+  geom_col(width = 0.8) +
+  scale_fill_jco(name = "Taxonomy") +
+  scale_fill_manual(values=rep(col_fil,5),name="Genus")+
+  theme_classic() +
+  theme(axis.line=element_line(size=0.5),
+        #panel.border = element_blank(),
+        axis.text=element_text(size = 12, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        axis.text.x=element_text(angle = -45, vjust = 0.8, hjust = 0),
+        strip.text.x = element_text(angle = 0,  face = "bold"),
+        legend.key.height = unit(0.5, 'cm'),
+        legend.text = element_text(face = "italic"),
+        text = element_text(family = 'serif', size = 12)
+        #legend.position = "none")
+  ) +
+  ylab("Relative abundance")
+  #facet_wrap(c("Sample.type","Batch","Run"),nrow=1,scales="free_x")
+
+
+barplot.type.batch.run.col
+```
+
+#### Barplots per run - species
+
+```{r, message = F}
+#Make combined column for subsetting
+PSB.all@sam_data$type.batch.run <- paste(PSB.all@sam_data$Sample.type,PSB.all@sam_data$Batch,PSB.all@sam_data$Run)
+
+ps.sub <- subset_samples(PSB.all, Sample.type != "Control") %>%
+  subset_samples(Sample.type == "Faecal sample" & Batch == 1)
+
+#Collapse to genus level
+bac.phyl <- tax_glom(ps.sub, "Species", NArm = FALSE)
+
+ps0 <- transform_sample_counts(bac.phyl, function(x) x / sum(x))
+
+ps0<- merge_samples(ps0, "type.batch.run")
+ps0 <- transform_sample_counts(ps0, function(x) x / sum(x))
+
+#Create melted dataframe
+df <- psmelt(ps0)
+
+#Select last non-empty taxonomic rank
+df[df==""] <- NA
+df$tax <- apply(df, 1, function(x) tail(na.omit(x), 1))
+
+#Arrange samples by mean abundance
+top <- df %>%
+  group_by(tax) %>%
+  dplyr::summarize(Mean = mean(Abundance)) %>%
+  arrange(-Mean)
+#Show top
+#top
+
+top10 <- top$tax[1:10]
+df0 <- df %>%
+  mutate(tax = fct_other(tax, c(as.matrix(top10))))
+
+df0 <- df0[order(df0$Sample, decreasing = TRUE), ]
+
+#Set order for samples
+#df0$Treatment <- factor(df0$Treatment, levels = c("Control", "Amp", "FOP", "LM", "LM+Amp", "LM+FOP"))
+
+#Set Hours as factor
+#$Hours <- factor(df0$Hours, levels = c("3h", "6h", "24h"))
+
+barplot.type.batch.run.col <- ggplot(df0, aes(Sample, Abundance, fill = fct_reorder(tax, Abundance, .fun = mean))) +
+  geom_col(width = 0.8) +
+  scale_fill_jco(name = "Taxonomy") +
+  scale_fill_manual(values=rep(col_fil,5),name="Genus")+
+  theme_classic() +
+  theme(axis.line=element_line(size=0.5),
+        #panel.border = element_blank(),
+        axis.text=element_text(size = 12, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        axis.text.x=element_text(angle = -45, vjust = 0.8, hjust = 0),
+        strip.text.x = element_text(angle = 0,  face = "bold"),
+        legend.key.height = unit(0.5, 'cm'),
+        legend.text = element_text(face = "italic"),
+        text = element_text(family = 'serif', size = 12)
+        #legend.position = "none")
+  ) +
+  ylab("Relative abundance")
+  #facet_wrap(c("Sample.type","Batch","Run"),nrow=1,scales="free_x")
+
+
+barplot.type.batch.run.col
+```
+
+#### PCoA by run
+
+```{r, eval = T, include = T, echo = F, massage = F}
+load("0.3_deduplicated_and_decontaminated.RData")
+
+ps <- subset_samples(PSB.CSS, Sample.type == "Faecal sample" & Batch == 1)
+
+#Do PCoA ordination based on Bray-curtis distance
+GP.ord <- ordinate(ps, "PCoA", "bray")
+
+#####################Run + Batch
+
+#PSB.CSS@sam_data$Run <- as.factor(PSB.CSS@sam_data$Run)
+
+#ps@sam_data$set <- as.factor(ps@sam_data$Batch)
+
+beta.batch.faeces = plot_ordination(ps, GP.ord, color="Run") + 
+  stat_ellipse(geom = "polygon", level = 0.95, fill = NA, size = 1) +
+  #scale_fill_manual(values= col_fil) +
+  #scale_color_manual(values = col_fil) +
+  theme_classic() + 
+  theme(text = element_text(size = 12, family = 'serif'),
+        axis.line=element_line(size=1),
+        axis.text=element_text(size = 12, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        #axis.text.x=element_text(angle = 45, hjust = 1),
+        strip.text.x = element_text(size = 12, angle = 0),
+        legend.text = element_text(size = 12)
+        #legend.position = "none"
+  ) +
+  ggtitle("Bray Curtis - non collapsed") 
+
+beta.batch.faeces
+```
+
+#### PCoA by run - Genus level
+
+```{r, eval = T, include = T, echo = F, massage = F}
+load("0.3_deduplicated_and_decontaminated.RData")
+
+ps <- subset_samples(PSB.CSS, Sample.type == "Faecal sample" & Batch == 1) %>%
+  tax_glom(taxrank = "Genus")
+
+#Do PCoA ordination based on Bray-curtis distance
+GP.ord <- ordinate(ps, "PCoA", "bray")
+
+#####################Run + Batch
+
+#PSB.CSS@sam_data$Run <- as.factor(PSB.CSS@sam_data$Run)
+
+#ps@sam_data$set <- as.factor(ps@sam_data$Batch)
+
+beta.batch.faeces = plot_ordination(ps, GP.ord, color="Run") + 
+  stat_ellipse(geom = "polygon", level = 0.95, fill = NA, size = 1) +
+  #scale_fill_manual(values= col_fil) +
+  #scale_color_manual(values = col_fil) +
+  theme_classic() + 
+  theme(text = element_text(size = 12, family = 'serif'),
+        axis.line=element_line(size=1),
+        axis.text=element_text(size = 12, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        #axis.text.x=element_text(angle = 45, hjust = 1),
+        strip.text.x = element_text(size = 12, angle = 0),
+        legend.text = element_text(size = 12)
+        #legend.position = "none"
+  ) +
+  ggtitle("Bray Curtis - non collapsed") 
+
+beta.batch.faeces
+```
+
+
+## Controls vs samples by sequencing run
+
+### Milk
+
+```{r, eval = T, include = T, echo = F, massage = F, warning = F}
+ps <- subset_samples(PSB.all, seq.run %in% c("UMI16S062","UMI16S064","UMI16S065","UMI16S066","UMI16S_131_RRJ","UMI16S_178_MH01","UMI16S_180_MH03"))
+
+#Do PCoA ordination based on Bray-curtis distance
+GP.ord <- ordinate(ps, "PCoA", "bray")
+
+#####################Run + Batch
+
+ps@sam_data$Batch <- as.factor(ps@sam_data$Batch)
+ps@sam_data$Run <- as.factor(ps@sam_data$Run)
+
+beta.controls.seq.run.milk = plot_ordination(ps, GP.ord, color="Control") + 
+  #stat_ellipse(geom = "polygon", level = 0.95, fill = NA, size = 1) +
+  #scale_fill_manual(values= col_fil) +
+  #scale_color_manual(values = col_fil) +
+  theme_classic() + 
+  theme(text = element_text(size = 12, family = 'serif'),
+        axis.line=element_line(size=1),
+        axis.text=element_text(size = 12, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        #axis.text.x=element_text(angle = 45, hjust = 1),
+        strip.text.x = element_text(size = 12, angle = 0),
+        legend.text = element_text(size = 12)
+        #legend.position = "none"
+  ) +
+  facet_wrap("seq.run",scales="free")
+
+beta.controls.seq.run.milk
+```
+
+
+## Milk
+
+### Batch
+
+```{r, eval = T, include = T, echo = F, massage = F}
+ps <- subset_samples(PSB.all, Sample.type == "Milk")
+
+#Do PCoA ordination based on Bray-curtis distance
+GP.ord <- ordinate(ps, "PCoA", "bray")
+
+#####################Run + Batch
+
+ps@sam_data$Batch <- as.factor(ps@sam_data$Batch)
+ps@sam_data$Run <- as.factor(ps@sam_data$Run)
+
+beta.id = plot_ordination(ps, GP.ord, color="Batch") + 
+  stat_ellipse(geom = "polygon", level = 0.95, fill = NA, size = 1) +
+  #scale_fill_manual(values= col_fil) +
+  #scale_color_manual(values = col_fil) +
+  theme_classic() + 
+  theme(text = element_text(size = 12, family = 'serif'),
+        axis.line=element_line(size=1),
+        axis.text=element_text(size = 12, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        #axis.text.x=element_text(angle = 45, hjust = 1),
+        strip.text.x = element_text(size = 12, angle = 0),
+        legend.text = element_text(size = 12)
+        #legend.position = "none"
+  ) 
+
+beta.id
+```
+
+### Milk batch by Sequencing run
+
+```{r, eval = T, include = T, echo = F, massage = F}
+ps <- subset_samples(PSB.all, Sample.type == "Milk")
+
+#####################Run + Batch
+ps@sam_data$Batch <- as.factor(ps@sam_data$Batch)
+ps@sam_data$Run <- as.factor(ps@sam_data$Run)
+ps@sam_data$batch.run <- paste(ps@sam_data$Batch,ps@sam_data$Run)
+
+#Do PCoA ordination based on Bray-curtis distance
+GP.ord <- ordinate(ps, "PCoA", "bray")
+
+beta.milk.batch.run = plot_ordination(ps, GP.ord, color="batch.run") + 
+  stat_ellipse(geom = "polygon", level = 0.95, fill = NA, size = 1) +
+  #scale_fill_manual(values= col_fil) +
+  #scale_color_manual(values = col_fil) +
+  theme_classic() + 
+  theme(text = element_text(size = 12, family = 'serif'),
+        axis.line=element_line(size=1),
+        axis.text=element_text(size = 12, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        #axis.text.x=element_text(angle = 45, hjust = 1),
+        strip.text.x = element_text(size = 12, angle = 0),
+        legend.text = element_text(size = 12)
+        #legend.position = "none"
+  )
+
+beta.milk.batch.run
+```
+
+
+
+### Milk runs per patch
+
+```{r, eval = T, include = T, echo = F, massage = F}
+ps <- subset_samples(PSB.all, Sample.type == "Milk" #& Batch == 1
+                     )
+
+#####################Run + Batch
+ps@sam_data$Batch <- as.factor(ps@sam_data$Batch)
+ps@sam_data$Run <- as.factor(ps@sam_data$Run)
+ps@sam_data$batch.run <- paste(ps@sam_data$Batch,ps@sam_data$Run)
+ps@sam_data$Set <- paste(ps@sam_data$Batch,ps@sam_data$Set)
+
+#Do PCoA ordination based on Bray-curtis distance
+GP.ord <- ordinate(ps, "PCoA", "bray")
+
+beta.milk.batch1.sets = plot_ordination(ps, GP.ord, color="Set") + 
+  stat_ellipse(geom = "polygon", level = 0.95, fill = NA, size = 1) +
+  # scale_fill_manual(values= col_fil) +
+  # scale_color_manual(values = col_fil) +
+  theme_classic() + 
+  theme(text = element_text(size = 12, family = 'serif'),
+        axis.line=element_line(size=1),
+        axis.text=element_text(size = 12, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        #axis.text.x=element_text(angle = 45, hjust = 1),
+        strip.text.x = element_text(size = 12, angle = 0),
+        legend.text = element_text(size = 12)
+        #legend.position = "none"
+  ) + facet_wrap(vars(Batch,Run))
+
+beta.milk.batch1.sets
+```
+
+## Batch 1 vaginal vs Rectal swabs
+
+### Batch
+
+```{r, eval = T, include = T, echo = F, massage = F}
+load("0.2_Filtered_and_formated.RData")
+
+ps <- subset_samples(PSB.CSS.all, seq.run %in% c("UMI16S_131_RRJ","UMI16S133_RRJ") & Sample.type %in% c("Rectal swab","Vaginal swab","Milk"))
+
+#Do PCoA ordination based on Bray-curtis distance
+GP.ord <- ordinate(ps, "PCoA", "bray")
+
+#####################Run + Batch
+
+ps@sam_data$Run <- as.factor(ps@sam_data$Run)
+
+ps@sam_data$Batch <- as.factor(ps@sam_data$Batch)
+
+beta.id = plot_ordination(PSB.CSS.all, GP.ord, color="Sample.type") + 
+  stat_ellipse(geom = "polygon", level = 0.95, fill = NA, size = 1) +
+  #scale_fill_manual(values= col_fil) +
+  #scale_color_manual(values = col_fil) +
+  theme_classic() + 
+  theme(text = element_text(size = 12, family = 'serif'),
+        axis.line=element_line(size=1),
+        axis.text=element_text(size = 12, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        #axis.text.x=element_text(angle = 45, hjust = 1),
+        strip.text.x = element_text(size = 12, angle = 0),
+        legend.text = element_text(size = 12)
+        #legend.position = "none"
+  ) 
+
+beta.id
+```
+
+### Barplots
+
+```{r, warning = F}
+load("0.2_Filtered_and_formated.RData")
+
+
+ps <- subset_samples(PSB.all.genus, seq.run %in% c("UMI16S_131_RRJ","UMI16S_132_RRJ","UMI16S133_RRJ") & Sample.type %in% c("Rectal swab","Vaginal swab"))
+
+#Make column with concatenated unique rcid and sample type for easy comparision
+
+ps@sam_data$id.unique.type <- paste(ps@sam_data$RCID.uniq,ps@sam_data$Sample.type)
+
+ps0 <- transform_sample_counts(ps, function(x) x / sum(x))
+
+#ps1<- merge_samples(ps0, "Time")
+
+#ps1 <- transform_sample_counts(ps0, function(x) x / sum(x))
+
+#Create melted dataframe
+df <- psmelt(ps0)
+
+#Select last non-empty taxonomic rank
+df[df==""] <- NA
+df$tax <- apply(df, 1, function(x) tail(na.omit(x), 1))
+
+#Arrange samples by mean abundance
+top <- df %>%
+  group_by(tax) %>%
+  dplyr::summarize(Mean = mean(Abundance)) %>%
+  arrange(-Mean)
+#Show top
+#top
+
+top10 <- top$tax[1:10]
+df0 <- df %>%
+  mutate(tax = fct_other(tax, c(as.matrix(top10))))
+
+df0 <- df0[order(df0$Sample, decreasing = TRUE), ]
+
+#Set order for samples
+#df0$Treatment <- factor(df0$Treatment, levels = c("Control", "Amp", "FOP", "LM", "LM+Amp", "LM+FOP"))
+
+#Set Hours as factor
+#$Hours <- factor(df0$Hours, levels = c("3h", "6h", "24h"))
+
+barplot.UMI16S_131 <- ggplot(df0, aes(id.unique.type, Abundance, fill = fct_reorder(tax, Abundance, .fun = mean))) +
+  geom_col(width = 0.8) +
+  scale_fill_jco(name = "Taxonomy") +
+  scale_fill_manual(values=rep(col_fil,5),name="Genus")+
+  theme_classic() +
+  theme(axis.line=element_line(size=0.5),
+        #panel.border = element_blank(),
+        axis.text=element_text(size = 12, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        axis.text.x=element_text(angle = -45, vjust = 0.8, hjust = 0),
+        strip.text.x = element_text(angle = 0,  face = "bold"),
+        legend.key.height = unit(0.5, 'cm'),
+        legend.text = element_text(face = "italic"),
+        text = element_text(family = 'serif', size = 12)
+        #legend.position = "none")
+  ) +
+  ylab("Relative abundance")+
+  facet_wrap("RCID",scales="free_x")
+
+
+barplot.UMI16S_131
+
+ggsave("barplot.UMI16S_131.pdf",width=30,height=20,limitsize = FALSE)
+```
+
+
+# Decontamination
+
+## All samples
+
+### Inspect Library Sizes
+
+```{r, message = F}
+load("0.2_Filtered_and_formated.RData")
+
+ps <- PSB.all
+
+df <- as.data.frame(sample_data(ps)) # Put sample_data into a ggplot-friendly data.frame
+df$LibrarySize <- sample_sums(ps)
+df <- df[order(df$LibrarySize),]
+df$Index <- seq(nrow(df))
+ggplot(data=df, aes(x=Index, y=LibrarySize, color=Control)) + geom_point() + scale_y_log10()
+```
+
+```{r, message = F}
+ggplot(data=df, aes(x=Index, y=LibrarySize, color=Control)) +
+  geom_boxplot() +
+  scale_y_log10()
+```
+
+### Identify Contaminants - Frequency
+
+```{r, message = F}
+load("0.2_Filtered_and_formated.RData")
+
+ps <- PSB.all
+
+ps@sam_data$DNA.conc <- as.numeric(ps@sam_data$DNA.conc) %>%
+  pmax(0) + 0.000001 # add pseudocount
+
+# Select only samples with measured DNA concentrations
+ps <- subset_samples(ps, !is.na(DNA.conc))
+
+
+contamdf.freq <- isContaminant(ps, method="frequency", conc="DNA.conc", threshold = 0.4)
+head(contamdf.freq)
+
+table(contamdf.freq$contaminant)
+
+head(which(contamdf.freq$contaminant))
+cont.rank <- head(which(contamdf.freq$contaminant))
+
+contamdf.freq.all <- contamdf.freq
+
+
+plot_frequency(ps, taxa_names(ps)[cont.rank], conc="DNA.conc") + 
+  xlab("DNA Concentration (Qbit dsDNA high sensitivity kit)")
+```
+
+The could be some trend of frequncy being depandant on DNA concentration - but none of these show clear enough correlations or are found in enough low read samples to be considered contaminants.
+
+###  Identify Contaminants - Prevalence
+
+```{r, message = F}
+load("0.2_Filtered_and_formated.RData")
+
+ps <- PSB.all
+
+sample_data(ps)$is.neg <- sample_data(ps)$Control == "Neg"
+contamdf.prev <- isContaminant(ps, method="prevalence", neg="is.neg", threshold = 0.1)
+table(contamdf.prev$contaminant)
+
+head(which(contamdf.prev$contaminant))
+
+# Make phyloseq object of presence-absence in negative controls and true samples
+ps.pa <- transform_sample_counts(ps, function(abund) 1*(abund>0))
+ps.pa.neg <- prune_samples(sample_data(ps.pa)$Control == "Neg", ps.pa)
+ps.pa.pos <- prune_samples(sample_data(ps.pa)$Sample.type != "Control", ps.pa)
+# Make data.frame of prevalence in positive and negative samples
+df.pa <- data.frame(pa.pos=taxa_sums(ps.pa.pos), pa.neg=taxa_sums(ps.pa.neg),
+                      contaminant=contamdf.prev$contaminant)
+ggplot(data=df.pa, aes(x=pa.neg, y=pa.pos, color=contaminant)) + geom_point() +
+  xlab("Prevalence (Negative Controls)") + ylab("Prevalence (True Samples)")
+```
+
+## Per Seq run
+
+### Inspect Library Sizes
+
+```{r, message = F}
+load("0.2_Filtered_and_formated.RData")
+
+ps <- PSB.all
+
+df <- as.data.frame(sample_data(ps)) # Put sample_data into a ggplot-friendly data.frame
+df$LibrarySize <- sample_sums(ps)
+df <- df[order(df$LibrarySize),]
+df$Index <- seq(nrow(df))
+ggplot(data=df, aes(x=Index, y=LibrarySize, color=Control)) +
+  geom_point() +
+  scale_y_log10() +
+  facet_wrap("seq.run")
+```
+
+```{r, message = F}
+ggplot(data=df, aes(x=Index, y=LibrarySize, color=Control)) +
+  geom_boxplot() +
+  scale_y_log10() +
+  facet_wrap("seq.run")
+```
+
+### Identify Contaminants - Frequency
+
+```{r, message = F}
+load("0.2_Filtered_and_formated.RData")
+
+ps <- PSB.all
+
+ps@sam_data$DNA.conc <- as.numeric(ps@sam_data$DNA.conc) %>%
+  pmax(0) + 0.000001 # add pseudocount
+
+# Select only samples with measured DNA concentrations
+ps <- subset_samples(ps, !is.na(DNA.conc))
+
+contamdf.freq <- isContaminant(ps, method="frequency", conc="DNA.conc",batch="seq.run" , threshold = 0.1)
+head(contamdf.freq)
+
+table(contamdf.freq$contaminant)
+
+head(which(contamdf.freq$contaminant))
+
+sum(sample_sums(prune_taxa(!contamdf.prev$contaminant, ps)))/sum(sample_sums(PSB.all))
+
+cont.rank <- head(which(contamdf.freq$contaminant))
+contamdf.freq.seq.run <- contamdf.freq
+
+plot_frequency(ps, taxa_names(ps)[cont.rank], conc="DNA.conc") + 
+  xlab("DNA Concentration (Qbit dsDNA high sensitivity kit)") 
+```
+
+###  Identify Contaminants - Prevalence
+
+```{r, message = F}
+load("0.2_Filtered_and_formated.RData")
+
+ps <- PSB.all
+
+sample_data(ps)$is.neg <- sample_data(ps)$Control == "Neg"
+contamdf.prev <- isContaminant(ps, method="prevalence", neg="is.neg", threshold = 0.1, batch = "seq.run")
+table(contamdf.prev$contaminant)
+
+head(which(contamdf.prev$contaminant))
+
+# Make phyloseq object of presence-absence in negative controls and true samples
+ps.pa <- transform_sample_counts(ps, function(abund) 1*(abund>0))
+ps.pa.neg <- prune_samples(sample_data(ps.pa)$Control == "Neg", ps.pa)
+ps.pa.pos <- prune_samples(sample_data(ps.pa)$Sample.type != "Control", ps.pa)
+# Make data.frame of prevalence in positive and negative samples
+df.pa <- data.frame(pa.pos=taxa_sums(ps.pa.pos), pa.neg=taxa_sums(ps.pa.neg),
+                      contaminant=contamdf.prev$contaminant)
+
+ggplot(data=df.pa, aes(x=pa.neg, y=pa.pos, color=contaminant)) + geom_point() +
+  xlab("Prevalence (Negative Controls)") + ylab("Prevalence (True Samples)")
+```
+
+
+## All samples by PCR plates
+
+### Identify Contaminants - Frequency
+
+```{r, message = F}
+load("0.2_Filtered_and_formated.RData")
+
+ps <- PSB.all
+
+ps@sam_data$batch.run.type <- paste(ps@sam_data$batch,ps@sam_data$Run,ps@sam_data$Sample.type)
+
+ps@sam_data$DNA.conc <- as.numeric(ps@sam_data$DNA.conc) %>%
+  pmax(0) + 0.000001 # add pseudocount
+
+# Select only samples with measured DNA concentrations
+ps <- subset_samples(ps, !is.na(DNA.conc))
+
+contamdf.freq <- isContaminant(ps, method="frequency", conc="DNA.conc",batch="batch.run.type" , threshold = 0.1)
+
+table(contamdf.freq$contaminant)
+
+head(which(contamdf.freq$contaminant))
+cont.rank <- head(which(contamdf.freq$contaminant))
+
+sum(sample_sums(prune_taxa(!contamdf.freq$contaminant, ps)))/sum(sample_sums(PSB.all))
+
+contamdf.freq.pcr <- contamdf.freq
+
+plot_frequency(ps, taxa_names(ps)[cont.rank], conc="DNA.conc") + 
+  xlab("DNA Concentration (Qbit dsDNA high sensitivity kit)")
+```
+
+
+###  Identify Contaminants - Prevalence
+
+```{r, message = F}
+sample_data(ps)$is.neg <- sample_data(ps)$Control == "Neg"
+contamdf.prev <- isContaminant(ps, method="prevalence", neg="is.neg", threshold = 0.1, batch = "batch.run.type")
+table(contamdf.prev$contaminant)
+
+head(which(contamdf.prev$contaminant))
+
+sum(sample_sums(prune_taxa(!contamdf.prev$contaminant, ps)))/sum(sample_sums(PSB.all))
+
+# Make phyloseq object of presence-absence in negative controls and true samples
+ps.pa <- transform_sample_counts(ps, function(abund) 1*(abund>0))
+ps.pa.neg <- prune_samples(sample_data(ps.pa)$Control == "Neg", ps.pa)
+ps.pa.pos <- prune_samples(sample_data(ps.pa)$Sample.type != "Control", ps.pa)
+# Make data.frame of prevalence in positive and negative samples
+df.pa <- data.frame(pa.pos=taxa_sums(ps.pa.pos), pa.neg=taxa_sums(ps.pa.neg),
+                      contaminant=contamdf.prev$contaminant)
+ggplot(data=df.pa, aes(x=pa.neg, y=pa.pos, color=contaminant)) + geom_point() +
+  xlab("Prevalence (Negative Controls)") + ylab("Prevalence (True Samples)")
+```
+
+## Show extent of decontaminated taxa
+
+### Decontam across all
+
+#### Remaining
+
+```{r, message = F}
+load("0.2_Filtered_and_formated.RData")
+
+#Make combined column for subsetting
+PSB.all@sam_data$type.batch.run <- paste(PSB.all@sam_data$Sample.type,PSB.all@sam_data$Batch,PSB.all@sam_data$Run)
+
+ps0 <- transform_sample_counts(PSB.all, function(x) x / sum(x))
+
+ps0<- merge_samples(ps0, "type.batch.run")
+
+ps0 <- transform_sample_counts(ps0, function(x) x / sum(x))
+
+ps0 <- prune_taxa(!contamdf.freq.all$contaminant, ps0)
+
+ps0 <- tax_glom(ps0, taxrank = "Genus")
+  
+#Create melted dataframe
+df <- psmelt(ps0)
+
+#Select last non-empty taxonomic rank
+df[df==""] <- NA
+df$tax <- apply(df, 1, function(x) tail(na.omit(x), 1))
+
+#Arrange samples by mean abundance
+top <- df %>%
+  group_by(tax) %>%
+  dplyr::summarize(Mean = mean(Abundance)) %>%
+  arrange(-Mean)
+#Show top
+#top
+
+top10 <- top$tax[1:10]
+df0 <- df %>%
+  mutate(tax = fct_other(tax, c(as.matrix(top10))))
+
+df0 <- df0[order(df0$Sample, decreasing = TRUE), ]
+
+#Set order for samples
+#df0$Treatment <- factor(df0$Treatment, levels = c("Control", "Amp", "FOP", "LM", "LM+Amp", "LM+FOP"))
+
+#Set Hours as factor
+#$Hours <- factor(df0$Hours, levels = c("3h", "6h", "24h"))
+
+barplot.decontam.all <- ggplot(df0, aes(Sample, Abundance, fill = fct_reorder(tax, Abundance, .fun = mean))) +
+  geom_col(width = 0.8) +
+  scale_fill_jco(name = "Taxonomy") +
+  scale_fill_manual(values=rep(col_fil,5),name="Genus")+
+  theme_classic() +
+  theme(axis.line=element_line(size=0.5),
+        #panel.border = element_blank(),
+        axis.text=element_text(size = 12, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        axis.text.x=element_text(angle = -45, vjust = 0.8, hjust = 0),
+        strip.text.x = element_text(angle = 0,  face = "bold"),
+        legend.key.height = unit(0.5, 'cm'),
+        legend.text = element_text(face = "italic"),
+        text = element_text(family = 'serif', size = 12)
+        #legend.position = "none")
+  ) +
+  ylab("Relative abundance")
+  #facet_wrap(c("Sample.type","Batch","Run"),nrow=1,scales="free_x")
+
+
+barplot.decontam.all
+
+
+```
+
+#### Removed
+
+```{r, message = F}
+load("0.2_Filtered_and_formated.RData")
+
+#Make combined column for subsetting
+PSB.all@sam_data$type.batch.run <- paste(PSB.all@sam_data$Sample.type,PSB.all@sam_data$Batch,PSB.all@sam_data$Run)
+
+ps0 <- transform_sample_counts(PSB.all, function(x) x / sum(x))
+
+ps0<- merge_samples(ps0, "type.batch.run")
+
+ps0 <- transform_sample_counts(ps0, function(x) x / sum(x))
+
+ps0 <- prune_taxa(contamdf.freq.all$contaminant, ps0)
+
+ps0 <- tax_glom(ps0, taxrank = "Genus")
+  
+#Create melted dataframe
+df <- psmelt(ps0)
+
+#Select last non-empty taxonomic rank
+df[df==""] <- NA
+df$tax <- apply(df, 1, function(x) tail(na.omit(x), 1))
+
+#Arrange samples by mean abundance
+top <- df %>%
+  group_by(tax) %>%
+  dplyr::summarize(Mean = mean(Abundance)) %>%
+  arrange(-Mean)
+#Show top
+#top
+
+top10 <- top$tax[1:10]
+df0 <- df %>%
+  mutate(tax = fct_other(tax, c(as.matrix(top10))))
+
+df0 <- df0[order(df0$Sample, decreasing = TRUE), ]
+
+#Set order for samples
+#df0$Treatment <- factor(df0$Treatment, levels = c("Control", "Amp", "FOP", "LM", "LM+Amp", "LM+FOP"))
+
+#Set Hours as factor
+#$Hours <- factor(df0$Hours, levels = c("3h", "6h", "24h"))
+
+barplot.decontam.all.removed <- ggplot(df0, aes(Sample, Abundance, fill = fct_reorder(tax, Abundance, .fun = mean))) +
+  geom_col(width = 0.8) +
+  scale_fill_jco(name = "Taxonomy") +
+  scale_fill_manual(values=rep(col_fil,5),name="Genus")+
+  theme_classic() +
+  theme(axis.line=element_line(size=0.5),
+        #panel.border = element_blank(),
+        axis.text=element_text(size = 12, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        axis.text.x=element_text(angle = -45, vjust = 0.8, hjust = 0),
+        strip.text.x = element_text(angle = 0,  face = "bold"),
+        legend.key.height = unit(0.5, 'cm'),
+        legend.text = element_text(face = "italic"),
+        text = element_text(family = 'serif', size = 12)
+        #legend.position = "none")
+  ) +
+  ylab("Relative abundance")+
+  scale_y_continuous(limits = c(0,1))
+  #facet_wrap(c("Sample.type","Batch","Run"),nrow=1,scales="free_x")
+
+
+barplot.decontam.all.removed
+```
+
+### Decontam across seq runs
+
+#### Remaining
+
+```{r, message = F}
+load("0.2_Filtered_and_formated.RData")
+
+#Make combined column for subsetting
+PSB.all@sam_data$type.batch.run <- paste(PSB.all@sam_data$Sample.type,PSB.all@sam_data$Batch,PSB.all@sam_data$Run)
+
+ps0 <- transform_sample_counts(PSB.all, function(x) x / sum(x))
+
+ps0<- merge_samples(ps0, "type.batch.run")
+
+ps0 <- transform_sample_counts(ps0, function(x) x / sum(x))
+
+ps0 <- prune_taxa(!contamdf.freq.seq.run$contaminant, ps0)
+
+ps0 <- tax_glom(ps0, taxrank = "Genus")
+  
+#Create melted dataframe
+df <- psmelt(ps0)
+
+#Select last non-empty taxonomic rank
+df[df==""] <- NA
+df$tax <- apply(df, 1, function(x) tail(na.omit(x), 1))
+
+#Arrange samples by mean abundance
+top <- df %>%
+  group_by(tax) %>%
+  dplyr::summarize(Mean = mean(Abundance)) %>%
+  arrange(-Mean)
+#Show top
+#top
+
+top10 <- top$tax[1:10]
+df0 <- df %>%
+  mutate(tax = fct_other(tax, c(as.matrix(top10))))
+
+df0 <- df0[order(df0$Sample, decreasing = TRUE), ]
+
+#Set order for samples
+#df0$Treatment <- factor(df0$Treatment, levels = c("Control", "Amp", "FOP", "LM", "LM+Amp", "LM+FOP"))
+
+#Set Hours as factor
+#$Hours <- factor(df0$Hours, levels = c("3h", "6h", "24h"))
+
+barplot.decontam.seq.run <- ggplot(df0, aes(Sample, Abundance, fill = fct_reorder(tax, Abundance, .fun = mean))) +
+  geom_col(width = 0.8) +
+  scale_fill_jco(name = "Taxonomy") +
+  scale_fill_manual(values=rep(col_fil,5),name="Genus")+
+  theme_classic() +
+  theme(axis.line=element_line(size=0.5),
+        #panel.border = element_blank(),
+        axis.text=element_text(size = 12, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        axis.text.x=element_text(angle = -45, vjust = 0.8, hjust = 0),
+        strip.text.x = element_text(angle = 0,  face = "bold"),
+        legend.key.height = unit(0.5, 'cm'),
+        legend.text = element_text(face = "italic"),
+        text = element_text(family = 'serif', size = 12)
+        #legend.position = "none")
+  ) +
+  ylab("Relative abundance")
+  #facet_wrap(c("Sample.type","Batch","Run"),nrow=1,scales="free_x")
+
+
+barplot.decontam.seq.run
+```
+
+#### Removed
+
+```{r, message = F}
+load("0.2_Filtered_and_formated.RData")
+
+#Make combined column for subsetting
+PSB.all@sam_data$type.batch.run <- paste(PSB.all@sam_data$Sample.type,PSB.all@sam_data$Batch,PSB.all@sam_data$Run)
+
+ps0 <- transform_sample_counts(PSB.all, function(x) x / sum(x))
+
+ps0<- merge_samples(ps0, "type.batch.run")
+
+ps0 <- transform_sample_counts(ps0, function(x) x / sum(x))
+
+ps0 <- prune_taxa(contamdf.freq.seq.run$contaminant, ps0)
+
+ps0 <- tax_glom(ps0, taxrank = "Genus")
+  
+#Create melted dataframe
+df <- psmelt(ps0)
+
+#Select last non-empty taxonomic rank
+df[df==""] <- NA
+df$tax <- apply(df, 1, function(x) tail(na.omit(x), 1))
+
+#Arrange samples by mean abundance
+top <- df %>%
+  group_by(tax) %>%
+  dplyr::summarize(Mean = mean(Abundance)) %>%
+  arrange(-Mean)
+#Show top
+#top
+
+top10 <- top$tax[1:10]
+df0 <- df %>%
+  mutate(tax = fct_other(tax, c(as.matrix(top10))))
+
+df0 <- df0[order(df0$Sample, decreasing = TRUE), ]
+
+#Set order for samples
+#df0$Treatment <- factor(df0$Treatment, levels = c("Control", "Amp", "FOP", "LM", "LM+Amp", "LM+FOP"))
+
+#Set Hours as factor
+#$Hours <- factor(df0$Hours, levels = c("3h", "6h", "24h"))
+
+barplot.decontam.seq.run.removed <- ggplot(df0, aes(Sample, Abundance, fill = fct_reorder(tax, Abundance, .fun = mean))) +
+  geom_col(width = 0.8) +
+  scale_fill_jco(name = "Taxonomy") +
+  scale_fill_manual(values=rep(col_fil,5),name="Genus")+
+  theme_classic() +
+  theme(axis.line=element_line(size=0.5),
+        #panel.border = element_blank(),
+        axis.text=element_text(size = 12, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        axis.text.x=element_text(angle = -45, vjust = 0.8, hjust = 0),
+        strip.text.x = element_text(angle = 0,  face = "bold"),
+        legend.key.height = unit(0.5, 'cm'),
+        legend.text = element_text(face = "italic"),
+        text = element_text(family = 'serif', size = 12)
+        #legend.position = "none")
+  ) +
+  ylab("Relative abundance")+
+  scale_y_continuous(limits = c(0,1))
+  #facet_wrap(c("Sample.type","Batch","Run"),nrow=1,scales="free_x")
+
+
+barplot.decontam.seq.run.removed
+```
+
+### Decontam across pcr plates
+
+```{r, message = F}
+load("0.2_Filtered_and_formated.RData")
+
+#Make combined column for subsetting
+PSB.all@sam_data$type.batch.run <- paste(PSB.all@sam_data$Sample.type,PSB.all@sam_data$Batch,PSB.all@sam_data$Run)
+
+ps0 <- transform_sample_counts(PSB.all, function(x) x / sum(x))
+
+ps0<- merge_samples(ps0, "type.batch.run")
+
+ps0 <- transform_sample_counts(ps0, function(x) x / sum(x))
+
+ps0 <- prune_taxa(!contamdf.freq.pcr$contaminant, ps0)
+
+ps0 <- tax_glom(ps0, taxrank = "Genus")
+  
+#Create melted dataframe
+df <- psmelt(ps0)
+
+#Select last non-empty taxonomic rank
+df[df==""] <- NA
+df$tax <- apply(df, 1, function(x) tail(na.omit(x), 1))
+
+#Arrange samples by mean abundance
+top <- df %>%
+  group_by(tax) %>%
+  dplyr::summarize(Mean = mean(Abundance)) %>%
+  arrange(-Mean)
+#Show top
+#top
+
+top10 <- top$tax[1:10]
+df0 <- df %>%
+  mutate(tax = fct_other(tax, c(as.matrix(top10))))
+
+df0 <- df0[order(df0$Sample, decreasing = TRUE), ]
+
+#Set order for samples
+#df0$Treatment <- factor(df0$Treatment, levels = c("Control", "Amp", "FOP", "LM", "LM+Amp", "LM+FOP"))
+
+#Set Hours as factor
+#$Hours <- factor(df0$Hours, levels = c("3h", "6h", "24h"))
+
+barplot.decontam.pcr <- ggplot(df0, aes(Sample, Abundance, fill = fct_reorder(tax, Abundance, .fun = mean))) +
+  geom_col(width = 0.8) +
+  scale_fill_jco(name = "Taxonomy") +
+  scale_fill_manual(values=rep(col_fil,5),name="Genus")+
+  theme_classic() +
+  theme(axis.line=element_line(size=0.5),
+        #panel.border = element_blank(),
+        axis.text=element_text(size = 12, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        axis.text.x=element_text(angle = -45, vjust = 0.8, hjust = 0),
+        strip.text.x = element_text(angle = 0,  face = "bold"),
+        legend.key.height = unit(0.5, 'cm'),
+        legend.text = element_text(face = "italic"),
+        text = element_text(family = 'serif', size = 12)
+        #legend.position = "none")
+  ) +
+  ylab("Relative abundance")
+  #facet_wrap(c("Sample.type","Batch","Run"),nrow=1,scales="free_x")
+
+
+barplot.decontam.pcr
+```
+
+## Per PCR individual plate - UMI16S056
+
+### Identify Contaminants - Frequency
+
+```{r, message = F}
+load("0.2_Filtered_and_formated.RData")
+
+ps <- subset_samples(PSB.all, seq.run == "UMI16S056")
+
+ps@sam_data$batch.run.type <- paste(ps@sam_data$batch,ps@sam_data$Run,ps@sam_data$Sample.type)
+
+ps@sam_data$DNA.conc <- as.numeric(ps@sam_data$DNA.conc) %>%
+  pmax(0) + 0.000001 # add pseudocount
+
+# Select only samples with measured DNA concentrations
+ps <- subset_samples(ps, !is.na(DNA.conc))
+
+##
+
+contamdf.freq <- isContaminant(ps, method="frequency", conc="DNA.conc" , threshold = 0.5)
+head(contamdf.freq)
+
+table(contamdf.freq$contaminant)
+
+head(which(contamdf.freq$contaminant))
+cont.rank <- which(contamdf.freq$contaminant)
+
+plot_frequency(ps, taxa_names(ps)[cont.rank], conc="DNA.conc") + 
+  xlab("DNA Concentration (Qbit dsDNA high sensitivity kit)")
+```
+
+
+###  Identify Contaminants - Prevalence
+
+Not run since no negative controls had sufficient reads to be included in this run
+
+```{r, message = F,eval = F}
+sample_data(ps)$is.neg <- sample_data(ps)$Control == "Neg"
+contamdf.prev <- isContaminant(ps, method="prevalence", neg="is.neg", threshold = 0.1)
+table(contamdf.prev$contaminant)
+
+head(which(contamdf.prev$contaminant))
+
+# Make phyloseq object of presence-absence in negative controls and true samples
+ps.pa <- transform_sample_counts(ps, function(abund) 1*(abund>0))
+ps.pa.neg <- prune_samples(sample_data(ps.pa)$Control == "Neg", ps.pa)
+ps.pa.pos <- prune_samples(sample_data(ps.pa)$Sample.type != "Control", ps.pa)
+# Make data.frame of prevalence in positive and negative samples
+df.pa <- data.frame(pa.pos=taxa_sums(ps.pa.pos), pa.neg=taxa_sums(ps.pa.neg),
+                      contaminant=contamdf.prev$contaminant)
+ggplot(data=df.pa, aes(x=pa.neg, y=pa.pos, color=contaminant)) + geom_point() +
+  xlab("Prevalence (Negative Controls)") + ylab("Prevalence (True Samples)")
+```
+
+## Per PCR individual plate - UMI16S048
+
+### Identify Contaminants - Frequency
+
+```{r, message = F}
+load("0.2_Filtered_and_formated.RData")
+
+ps <- subset_samples(PSB.all, seq.run == "UMI16S048")
+
+ps@sam_data$batch.run.type <- paste(ps@sam_data$batch,ps@sam_data$Run,ps@sam_data$Sample.type)
+
+ps@sam_data$DNA.conc <- as.numeric(ps@sam_data$DNA.conc) %>%
+  pmax(0) + 0.000001 # add pseudocount
+
+# Select only samples with measured DNA concentrations
+ps <- subset_samples(ps, !is.na(DNA.conc))
+
+##
+
+contamdf.freq <- isContaminant(ps, method="frequency", conc="DNA.conc" , threshold = 0.5)
+head(contamdf.freq)
+
+table(contamdf.freq$contaminant)
+
+head(which(contamdf.freq$contaminant))
+cont.rank <- head(which(contamdf.freq$contaminant))
+
+plot_frequency(ps, taxa_names(ps)[cont.rank], conc="DNA.conc") + 
+  xlab("DNA Concentration (Qbit dsDNA high sensitivity kit)")
+```
+
+
+
+###  Identify Contaminants - Prevalence
+
+Not run since no negative controls had sufficient reads to be included in this run
+
+```{r, message = F,eval = F}
+sample_data(ps)$is.neg <- sample_data(ps)$Control == "Neg"
+contamdf.prev <- isContaminant(ps, method="prevalence", neg="is.neg", threshold = 0.1)
+table(contamdf.prev$contaminant)
+
+head(which(contamdf.prev$contaminant))
+
+# Make phyloseq object of presence-absence in negative controls and true samples
+ps.pa <- transform_sample_counts(ps, function(abund) 1*(abund>0))
+ps.pa.neg <- prune_samples(sample_data(ps.pa)$Control == "Neg", ps.pa)
+ps.pa.pos <- prune_samples(sample_data(ps.pa)$Sample.type != "Control", ps.pa)
+# Make data.frame of prevalence in positive and negative samples
+df.pa <- data.frame(pa.pos=taxa_sums(ps.pa.pos), pa.neg=taxa_sums(ps.pa.neg),
+                      contaminant=contamdf.prev$contaminant)
+ggplot(data=df.pa, aes(x=pa.neg, y=pa.pos, color=contaminant)) + geom_point() +
+  xlab("Prevalence (Negative Controls)") + ylab("Prevalence (True Samples)")
+```
+
+# Replicate samples
+
+## Barplots of replicates
+
+### All
+
+```{r, message = F}
+load("0.2_Filtered_and_formated.RData")
+
+ps <- subset_samples(PSB.all.genus, unique == FALSE)
+
+ps0 <- transform_sample_counts(ps, function(x) x / sum(x))
+
+#ps1<- merge_samples(ps0, "Time")
+
+#ps1 <- transform_sample_counts(ps0, function(x) x / sum(x))
+
+#Create melted dataframe
+df <- psmelt(ps0)
+
+#Select last non-empty taxonomic rank
+df[df==""] <- NA
+df$tax <- apply(df, 1, function(x) tail(na.omit(x), 1))
+
+#Arrange samples by mean abundance
+top <- df %>%
+  group_by(tax) %>%
+  dplyr::summarize(Mean = mean(Abundance)) %>%
+  arrange(-Mean)
+#Show top
+#top
+
+top10 <- top$tax[1:10]
+df0 <- df %>%
+  mutate(tax = fct_other(tax, c(as.matrix(top10))))
+
+df0 <- df0[order(df0$Sample, decreasing = TRUE), ]
+
+#Set order for samples
+#df0$Treatment <- factor(df0$Treatment, levels = c("Control", "Amp", "FOP", "LM", "LM+Amp", "LM+FOP"))
+
+#Set Hours as factor
+#$Hours <- factor(df0$Hours, levels = c("3h", "6h", "24h"))
+
+barplot.all.replicates <- ggplot(df0, aes(RCID.uniq, Abundance, fill = fct_reorder(tax, Abundance, .fun = mean))) +
+  geom_col(width = 0.8) +
+  scale_fill_jco(name = "Taxonomy") +
+  scale_fill_manual(values=rep(col_fil,5),name="Genus")+
+  theme_classic() +
+  theme(axis.line=element_line(size=0.5),
+        #panel.border = element_blank(),
+        axis.text=element_text(size = 12, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        axis.text.x=element_text(angle = -45, vjust = 0.8, hjust = 0),
+        strip.text.x = element_text(angle = 0,  face = "bold"),
+        legend.key.height = unit(0.5, 'cm'),
+        legend.text = element_text(face = "italic"),
+        text = element_text(family = 'serif', size = 12)
+        #legend.position = "none")
+  ) +
+  ylab("Relative abundance")+
+  facet_wrap("Sample.type",scales="free_x")
+
+
+barplot.all.replicates
+
+ggsave("barplot.replicates.pdf",width=50,height=4,limitsize = FALSE)
+```
+
+### Milk
+
+```{r, message = F}
+load("0.2_Filtered_and_formated.RData")
+
+ps <- subset_samples(PSB.all.genus, unique == FALSE & Sample.type == "Milk")
+
+ps0 <- transform_sample_counts(ps, function(x) x / sum(x))
+
+#ps1<- merge_samples(ps0, "Time")
+
+#ps1 <- transform_sample_counts(ps0, function(x) x / sum(x))
+
+#Create melted dataframe
+df <- psmelt(ps0)
+
+#Select last non-empty taxonomic rank
+df[df==""] <- NA
+df$tax <- apply(df, 1, function(x) tail(na.omit(x), 1))
+
+#Arrange samples by mean abundance
+top <- df %>%
+  group_by(tax) %>%
+  dplyr::summarize(Mean = mean(Abundance)) %>%
+  arrange(-Mean)
+#Show top
+#top
+
+top10 <- top$tax[1:10]
+df0 <- df %>%
+  mutate(tax = fct_other(tax, c(as.matrix(top10))))
+
+df0 <- df0[order(df0$Sample, decreasing = TRUE), ]
+
+#Set order for samples
+#df0$Treatment <- factor(df0$Treatment, levels = c("Control", "Amp", "FOP", "LM", "LM+Amp", "LM+FOP"))
+
+#Set Hours as factor
+#$Hours <- factor(df0$Hours, levels = c("3h", "6h", "24h"))
+
+barplot.milk.replicates <- ggplot(df0, aes(RCID.uniq, Abundance, fill = fct_reorder(tax, Abundance, .fun = mean))) +
+  geom_col(width = 0.8) +
+  scale_fill_jco(name = "Taxonomy") +
+  scale_fill_manual(values=rep(col_fil,5),name="Genus")+
+  theme_classic() +
+  theme(axis.line=element_line(size=0.5),
+        #panel.border = element_blank(),
+        axis.text=element_text(size = 12, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        axis.text.x=element_text(angle = -45, vjust = 0.8, hjust = 0),
+        strip.text.x = element_text(angle = 0,  face = "bold"),
+        legend.key.height = unit(0.5, 'cm'),
+        legend.text = element_text(face = "italic"),
+        text = element_text(family = 'serif', size = 12)
+        #legend.position = "none")
+  ) +
+  ylab("Relative abundance")+
+  facet_wrap("Sample.type",scales="free_x")
+
+
+barplot.milk.replicates
+
+ggsave("barplot.replicates.milk.pdf",width=50,height=4,limitsize = FALSE)
+```
+
+#### Milk - low read samples removed
+
+```{r, message = F}
+load("0.2_Filtered_and_formated.RData")
+
+ps <- subset_samples(PSB.all.genus, unique == FALSE & Sample.type == "Milk")
+ps = prune_samples(sample_sums(ps)>=200, ps)
+
+ps0 <- transform_sample_counts(ps, function(x) x / sum(x))
+
+#ps1<- merge_samples(ps0, "Time")
+
+#ps1 <- transform_sample_counts(ps0, function(x) x / sum(x))
+
+#Create melted dataframe
+df <- psmelt(ps0)
+
+#Select last non-empty taxonomic rank
+df[df==""] <- NA
+df$tax <- apply(df, 1, function(x) tail(na.omit(x), 1))
+
+#Arrange samples by mean abundance
+top <- df %>%
+  group_by(tax) %>%
+  dplyr::summarize(Mean = mean(Abundance)) %>%
+  arrange(-Mean)
+#Show top
+#top
+
+top10 <- top$tax[1:10]
+df0 <- df %>%
+  mutate(tax = fct_other(tax, c(as.matrix(top10))))
+
+df0 <- df0[order(df0$Sample, decreasing = TRUE), ]
+
+#Set order for samples
+#df0$Treatment <- factor(df0$Treatment, levels = c("Control", "Amp", "FOP", "LM", "LM+Amp", "LM+FOP"))
+
+#Set Hours as factor
+#$Hours <- factor(df0$Hours, levels = c("3h", "6h", "24h"))
+
+barplot.milk.replicates.low.read.removed <- ggplot(df0, aes(RCID.uniq, Abundance, fill = fct_reorder(tax, Abundance, .fun = mean))) +
+  geom_col(width = 0.8) +
+  scale_fill_jco(name = "Taxonomy") +
+  scale_fill_manual(values=rep(col_fil,5),name="Genus")+
+  theme_classic() +
+  theme(axis.line=element_line(size=0.5),
+        #panel.border = element_blank(),
+        axis.text=element_text(size = 12, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        axis.text.x=element_text(angle = -45, vjust = 0.8, hjust = 0),
+        strip.text.x = element_text(angle = 0,  face = "bold"),
+        legend.key.height = unit(0.5, 'cm'),
+        legend.text = element_text(face = "italic"),
+        text = element_text(family = 'serif', size = 12)
+        #legend.position = "none")
+  ) +
+  ylab("Relative abundance")+
+  facet_wrap("Sample.type",scales="free_x")
+
+
+barplot.milk.replicates.low.read.removed
+
+ggsave("barplot.replicates.milk.low.read.removed.pdf",width=50,height=4,limitsize = FALSE)
+```
+
+#### Milk - low read samples removed - by batch
+
+```{r, message = F}
+load("0.2_Filtered_and_formated.RData")
+
+ps <- subset_samples(PSB.all.genus, unique == FALSE & Sample.type == "Milk")
+ps = prune_samples(sample_sums(ps)>=200, ps)
+
+ps0 <- transform_sample_counts(ps, function(x) x / sum(x))
+
+#ps1<- merge_samples(ps0, "Time")
+
+#ps1 <- transform_sample_counts(ps0, function(x) x / sum(x))
+
+#Create melted dataframe
+df <- psmelt(ps0)
+
+#Select last non-empty taxonomic rank
+df[df==""] <- NA
+df$tax <- apply(df, 1, function(x) tail(na.omit(x), 1))
+
+#Arrange samples by mean abundance
+top <- df %>%
+  group_by(tax) %>%
+  dplyr::summarize(Mean = mean(Abundance)) %>%
+  arrange(-Mean)
+#Show top
+#top
+
+top10 <- top$tax[1:10]
+df0 <- df %>%
+  mutate(tax = fct_other(tax, c(as.matrix(top10))))
+
+df0 <- df0[order(df0$Sample, decreasing = TRUE), ]
+
+#Set order for samples
+#df0$Treatment <- factor(df0$Treatment, levels = c("Control", "Amp", "FOP", "LM", "LM+Amp", "LM+FOP"))
+
+#Set Hours as factor
+#$Hours <- factor(df0$Hours, levels = c("3h", "6h", "24h"))
+
+barplot.milk.replicates.low.read.removed.batch <- ggplot(df0, aes(RCID.uniq, Abundance, fill = fct_reorder(tax, Abundance, .fun = mean))) +
+  geom_col(width = 0.8) +
+  scale_fill_jco(name = "Taxonomy") +
+  scale_fill_manual(values=rep(col_fil,5),name="Genus")+
+  theme_classic() +
+  theme(axis.line=element_line(size=0.5),
+        #panel.border = element_blank(),
+        axis.text=element_text(size = 12, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        axis.text.x=element_text(angle = -45, vjust = 0.8, hjust = 0),
+        strip.text.x = element_text(angle = 0,  face = "bold"),
+        legend.key.height = unit(0.5, 'cm'),
+        legend.text = element_text(face = "italic"),
+        text = element_text(family = 'serif', size = 12)
+        #legend.position = "none")
+  ) +
+  ylab("Relative abundance")+
+  facet_wrap(c("Batch","Run"),scales="free_x")
+
+
+barplot.milk.replicates.low.read.removed.batch
+
+ggsave("barplot.replicates.milk.low.read.removed.batch.pdf",width=30,height=20,limitsize = FALSE)
+```
+
+### Vaginal + rectal swabs
+
+```{r, message = F}
+load("0.2_Filtered_and_formated.RData")
+
+ps <- subset_samples(PSB.all.genus, Sample.type %in% c("Vaginal swab", "Rectal swab"))
+
+ps0 <- transform_sample_counts(ps, function(x) x / sum(x))
+
+#ps1<- merge_samples(ps0, "Time")
+
+#ps1 <- transform_sample_counts(ps0, function(x) x / sum(x))
+
+#Create melted dataframe
+df <- psmelt(ps0)
+
+#Select last non-empty taxonomic rank
+df[df==""] <- NA
+df$tax <- apply(df, 1, function(x) tail(na.omit(x), 1))
+
+#Arrange samples by mean abundance
+top <- df %>%
+  group_by(tax) %>%
+  dplyr::summarize(Mean = mean(Abundance)) %>%
+  arrange(-Mean)
+#Show top
+#top
+
+top10 <- top$tax[1:10]
+df0 <- df %>%
+  mutate(tax = fct_other(tax, c(as.matrix(top10))))
+
+df0 <- df0[order(df0$Sample, decreasing = TRUE), ]
+
+#Set order for samples
+#df0$Treatment <- factor(df0$Treatment, levels = c("Control", "Amp", "FOP", "LM", "LM+Amp", "LM+FOP"))
+
+#Set Hours as factor
+#$Hours <- factor(df0$Hours, levels = c("3h", "6h", "24h"))
+
+barplot.vag.rek.replicates <- ggplot(df0, aes(RCID.uniq, Abundance, fill = fct_reorder(tax, Abundance, .fun = mean))) +
+  geom_col(width = 0.8) +
+  scale_fill_jco(name = "Taxonomy") +
+  scale_fill_manual(values=rep(col_fil,5),name="Genus")+
+  theme_classic() +
+  theme(axis.line=element_line(size=0.5),
+        #panel.border = element_blank(),
+        axis.text=element_text(size = 12, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        axis.text.x=element_text(angle = -45, vjust = 0.8, hjust = 0),
+        strip.text.x = element_text(angle = 0,  face = "bold"),
+        legend.key.height = unit(0.5, 'cm'),
+        legend.text = element_text(face = "italic"),
+        text = element_text(family = 'serif', size = 12)
+        #legend.position = "none")
+  ) +
+  ylab("Relative abundance")+
+  facet_wrap("Sample.type",scales="free_x")
+
+
+barplot.vag.rek.replicates
+
+ggsave("barplot.replicates.vag-rec.pdf",width=50,height=4,limitsize = FALSE)
+```
+
+## Select highest read-duplicates
+
+```{r, eval = T, include = T, echo = F, massage = F}
+PSB.all.deduped <- ps_dedupe(PSB.all, vars = "id.type", method = "readcount", n = 1)
+```
+
+# SessionInfo
+
+```{r}
+sessionInfo()
+```

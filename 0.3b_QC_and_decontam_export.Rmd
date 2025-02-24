@@ -1,0 +1,104 @@
+---
+title: "Quality control and decontamination"
+author: "Rasmus Riemer Jakobsen"
+date: "`r Sys.time()`"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+link-citations: yes
+---
+
+```{r setup, include=F, message=F}
+#Set working directory to script directory
+#setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+
+dir.create("results", showWarnings = FALSE, recursive = TRUE)
+
+#Load required packages and install if necessary
+source("Supplementary_scripts/package_load_install.R")
+
+theme_set(theme_classic())
+
+# knitr::opts_chunk$set(fig.width=12, fig.height=8, fig.fullwidth = TRUE,
+#                       warning = FALSE,
+                      #root.dir = setwd(dirname(rstudioapi::getActiveDocumentContext()$path))) #Set working directory to script directory 
+
+
+```
+
+# Load filtered and formated phyloseq objects
+
+```{r, message = F}
+load("0.2_Filtered_and_formated.RData")
+```
+
+# Save decontaminated de-replicated phyloseq objects
+
+```{r, message = F}
+
+## Remove contaminating sequences
+
+ps <- PSB.all
+
+ps@sam_data$DNA.conc <- as.numeric(ps@sam_data$DNA.conc) %>%
+  pmax(0) + 0.000001 # add pseudocount
+
+# Select only samples with measured DNA concentrations
+ps <- subset_samples(ps, !is.na(DNA.conc))
+
+contamdf.freq.all <- isContaminant(ps, method="frequency", conc="DNA.conc", threshold = 0.4)
+
+PSB.all <- prune_taxa(!contamdf.freq.all$contaminant, PSB.all)
+
+#PSB
+
+##Remove controls
+PSB <- subset_samples(PSB.all,Sample.type != "Control")
+
+##Remove duplicates
+PSB <- ps_dedupe(PSB, vars = "id.type", method = "readcount", n = 1)
+
+## Select highest read-duplicates
+
+```
+
+#Create mapping file
+
+```{r}
+meta.dat <- as.data.frame(as.matrix(sample_data(PSB)))
+```
+
+
+# Update  for CSS normalised object
+
+```{r, message = F}
+##Remove samples from CSS normalized phyloseq object
+PSB.CSS <- prune_samples(sample_names(PSB), PSB.CSS.all)
+
+PSB.CSS <- prune_taxa(taxa_names(PSB), PSB.CSS)
+
+PSB.CSS@sam_data <- PSB@sam_data
+```
+
+# Collapse tables at taxonomic levels
+
+```{r, message = F}
+PSB.species <- tax_glom(PSB,"Species", NArm = FALSE)
+PSB.genus <- tax_glom(PSB,"Genus", NArm = FALSE)
+PSB.family <- tax_glom(PSB,"Family", NArm = FALSE)
+```
+
+# Make rarefied phyloseq object
+
+```{r, message = F}
+PSB.rar <- rarefy_even_depth(PSB, sample.size = mean(sample_sums(PSB)))
+PSB.rar.notrim <- rarefy_even_depth(PSB, sample.size = mean(sample_sums(PSB)),trimOTUs = F)
+```
+
+
+# SessionInfo
+
+```{r}
+sessionInfo()
+```

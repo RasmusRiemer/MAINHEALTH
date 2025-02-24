@@ -1,0 +1,999 @@
+---
+title: "4.1_Metabolome_milk"
+author: "Rasmus Riemer Jakobsen"
+date: "`r Sys.time()`"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+link-citations: yes
+---
+
+```{r setup, include=F, message=F, warning=F}
+subdir_name <- "4.1_Metabolome_milk"
+
+#Load packages
+source("Supplementary_scripts/package_load_install.R")
+#Load utility functions
+source("Supplementary_scripts/utils.R")
+
+dir.create("results", showWarnings = FALSE, recursive = TRUE)
+
+# Set theme and colort
+
+theme_set(theme_classic())
+
+knitr::opts_chunk$set(fig.width=12, fig.height=8, fig.fullwidth = TRUE)
+
+effect.size.variables <- append(effect.size.variables[-c(1:2)],"RCID") #"DNA conc" and "batch" only for sequencing data
+
+#Coulour pallettes
+col_fil <- brewer.pal(8, "Dark2")#pal_jco("default")(10)
+
+col_scale <- scale_fill_distiller(palette = "Dark2")
+```
+
+```{r knit, echo=F, eval=FALSE}
+#Run to generate
+rmarkdown::render(
+  input = here::here(str_c(subdir_name, ".Rmd")),
+  output_dir = here::here("results", "reports")
+)
+```
+
+# Load data
+
+```{r}
+df.id <- readr::read_tsv("Data/metabolome_milk.txt")
+meta <- readr::read_tsv("Data/metadata_metabome_milk.txt")
+metab.class <- readr::read_tsv("Data/metabolite_categories.txt")
+
+#Remove sample 383_2 - possible error?
+df.id <- df.id %>%
+  filter(RCID != "383_2")
+meta <- meta %>%
+  filter(RCID != "383_2")
+
+  
+#Check if dataframes match
+setdiff(df.id$RCID,meta$RCID)
+
+
+df <- df.id %>% dplyr::select(-RCID) 
+
+# Set columns to factor
+meta <- meta %>%
+  dplyr::mutate(across(c("Days","Siblings", "GDM", "C.section", "AB.mother", "AB.infant", "Breast.infection", "Breastfeeding.issues", "Secretor", "Lewis"),
+    as.factor))
+
+meta$BMI.group <- factor(meta$BMI.group, levels = c("Normal","Overweight","Obese"))
+
+str(meta$Lewis)
+```
+
+# Sumammary table
+
+## Ordered by class concentration (mMol/mL)
+
+```{r}
+library(vtable)
+library(kableExtra)
+
+ 
+
+# Sort by mean within each class
+metab.class <- metab.class[match(colnames(df), metab.class$Metabolite), ]
+table(metab.class$Class)
+
+means <- colMeans(df)
+
+metab.class$Means <- unname(means)
+
+metab.class.sorted <- metab.class %>%
+  group_by(Class) %>%
+  arrange(-Means) %>%
+  arrange(Class)
+#summarise(df.met_sorted)
+
+# Add days and apply within-class ordering
+df.met <- df[metab.class.sorted$Metabolite]
+df.met <- cbind(df.met,"Days"=c(meta$Days))
+
+# Days to sortin mat
+
+metab.class.na <- rbind(NA,ungroup(metab.class.sorted))
+
+#table(c("Timepoint",metab.class.sorted$Class))
+
+Sys.setenv(OPENSSL_CONF="/dev/null")
+
+#Grouped by category
+
+st(dplyr::select(df.met,-c("Days")),
+   out = "return",
+   #group = 'Days',
+   #group.test = TRUE,
+   summ = c('mean(x)','sd(x)'),
+   ) %>%
+   knitr::kable("html") %>%
+    kable_styling(htmltable_class="lightable-classic") %>%
+    pack_rows(index = table(c(metab.class.sorted$Class)),
+label_row_css = "background-color: #666; color: #fff;") %>%
+    #row_spec(1, bold = TRUE) %>%
+    save_kable("results/metabolites.html", density = 400)
+webshot::webshot("results/metabolites.html", "results/metabolites.pdf")
+webshot::webshot("results/metabolites.html", "results/metabolites.png")
+```
+
+## Ordered by class concentration (mMol/mL) - Days
+
+```{r}
+library(vtable)
+library(kableExtra)
+
+ 
+
+# Sort by mean within each class
+metab.class <- metab.class[match(colnames(df), metab.class$Metabolite), ]
+table(metab.class$Class)
+
+means <- colMeans(df)
+
+metab.class$Means <- unname(means)
+
+metab.class.sorted <- metab.class %>%
+  group_by(Class) %>%
+  arrange(-Means) %>%
+  arrange(Class)
+
+#summarise(df.met_sorted)
+
+# Add days and apply within-class ordering
+df.met <- df[metab.class.sorted$Metabolite]
+df.met <- cbind(df.met,"Days"=c(meta$Days))
+
+# Days to sortin mat
+
+metab.class.na <- rbind(NA,ungroup(metab.class.sorted))
+
+#table(c("Timepoint",metab.class.sorted$Class))
+
+Sys.setenv(OPENSSL_CONF="/dev/null")
+
+#Grouped by category
+
+sum_table_mt_group <- st(df.met,
+   out = "return",
+   group = 'Days',
+   group.test = TRUE,
+   summ = c('mean(x)','sd(x)'),
+   )
+
+
+
+sum_table_mt_group %>%
+   knitr::kable("html") %>%
+    kable_styling(htmltable_class="lightable-classic") %>%
+    pack_rows(index = table(c(" ",metab.class.sorted$Class)),
+label_row_css = "background-color: #666; color: #fff;") %>%
+    #row_spec(1, bold = TRUE) %>%
+    save_kable("results/metabolites_grouped.html", density = 400)
+webshot::webshot("results/metabolites_grouped.html", "results/metabolites_grouped.pdf")
+webshot::webshot("results/metabolites_grouped.html", "results/metabolites_grouped.png")
+
+```
+
+#### Export xlsx
+
+```{r}
+library(expss)
+library(openxlsx)
+
+wb = createWorkbook()
+sh = addWorksheet(wb, "Tables")
+
+#Export - we should specify workbook and worksheet.
+
+xl_write(sum_table_mt_group, wb, sh)
+
+#And, finally, we save workbook with table to the xlsx file.
+
+
+saveWorkbook(wb, "results/metabolites_grouped.xlsx", overwrite = TRUE)
+
+```
+
+# PCA plot
+
+## Normalisation comparison
+
+```{r}
+library(factoextra)
+
+pca_res <- prcomp(df, scale. = FALSE, center = TRUE) #Apply UV-scaling
+
+#Square root log
+df.sq <- df %>%
+  dplyr::mutate(across(where(is.numeric), ~ifelse(. < 0, NA_real_, sqrt(.))))
+pca_res_sqrt <- prcomp(df.sq, scale. = FALSE, center = TRUE) #Apply UV-scaling
+
+#Log10 norm
+df.log <- log10(df+1)
+pca_res_log <- prcomp(df.log, scale. = FALSE, center = TRUE) #Apply UV-scaling
+
+ggarrange(
+fviz_eig(pca_res) + ggtitle("Only centering"),
+fviz_eig(pca_res_sqrt) + ggtitle("Square root normalisation"),
+fviz_eig(pca_res_log) + ggtitle("log10 normalisation"),
+nrow=1
+)
+
+```
+
+##Non normalised
+
+```{r}
+library(ggfortify)
+
+# Non-normalised
+
+autoplot(pca_res, data = meta, colour = "Lewis", frame = TRUE, frame.type = 'norm')
+autoplot(pca_res, data = meta, colour = "Secretor", frame = TRUE, frame.type = 'norm')
+autoplot(pca_res, data = meta, colour = "Days", frame = TRUE, frame.type = 'norm')
+
+```
+
+## Square root norm
+
+```{r}
+library(ggfortify)
+
+# Non-normalised
+
+autoplot(pca_res, data = meta, colour = "Lewis", frame = TRUE, frame.type = 'norm')
+autoplot(pca_res, data = meta, colour = "Secretor", frame = TRUE, frame.type = 'norm')
+autoplot(pca_res, data = meta, colour = "Days", frame = TRUE, frame.type = 'norm')
+
+# Sqrt normalised
+
+autoplot(pca_res_sqrt, data = meta, colour = "Lewis", fill=NA,frame = TRUE, frame.type = 'norm') +
+  scale_color_manual(values=col_fil) +
+  scale_fill_manual(values=col_fil)
+
+sl(metab.pca.milk.secretor,
+autoplot(pca_res_sqrt, data = meta, colour = "Secretor") +
+  scale_color_manual(values=col_fil) +
+  stat_ellipse(aes(color=Secretor),geom = "polygon", level = 0.95, fill = NA, size = 1) +
+  ggplot2::annotate("text", x = -0.08, y = 0.12, label = "p < 0.0001"),
+  overwrite = T
+  )
+
+metab.pca.milk.secretor
+
+sl(metab.pca.milk.days,
+  autoplot(pca_res_sqrt, data = meta, colour = "Days") +
+  scale_color_manual(values=col_fil[4:1],) +
+  stat_ellipse(aes(color=Days),geom = "polygon", level = 0.95, fill = NA, size = 1) +
+  ggplot2::annotate("text", x = -0.02, y = 0.12, label = "All: p < 0.0001      Pairwise: p < 0.004"),
+  overwrite = T
+  )+
+  ggtitle("Milk metabolites")
+
+metab.pca.milk.days
+
+autoplot(pca_res_sqrt, data = meta, colour = "delta.whz", frame = TRUE, frame.type = 'norm')
+autoplot(pca_res_sqrt, data = meta, colour = "BMI.delta.3m", frame = TRUE, frame.type = 'norm')
+
+
+pca_res_sqrt.bmi <- prcomp(df.sq[!is.na(meta$BMI.group),], scale. = FALSE, center = TRUE) #Apply UV-scaling
+
+sl(metab.pca.milk.bmi,
+  autoplot(pca_res_sqrt.bmi, data = meta[!is.na(meta$BMI.group),], colour = "BMI.group") +
+  scale_color_manual(values=col_fil[1:3],name="BMI group") +
+  stat_ellipse(aes(color=BMI.group),geom = "polygon", level = 0.95, fill = NA, size = 1) +
+  ggplot2::annotate("text", x = 0, y = 0.12, label = "NW-OW:*NW-OB:*OW-OB:NS"),
+  overwrite = T
+  ) +
+  ggtitle("Milk metabolites")
+
+metab.pca.milk.bmi
+
+autoplot(pca_res_sqrt, data = meta, colour = "Gestational.age", frame = TRUE, frame.type = 'norm')
+
+autoplot(pca_res_sqrt, data = meta, colour = "Days", shape="Secretor",frame = TRUE, frame.type = 'norm')
+
+######################GGbiplot
+
+#install_github("vqv/ggbiplot")
+library(ggbiplot)
+
+ggbiplot::ggbiplot(pca_res_sqrt)
+
+ggbiplot(pca_res_sqrt,ellipse=TRUE,choices=c(3,4),labels=rownames(meta), groups=as.factor(meta$Lewis), var.axes=TRUE) #Loadings + points
+
+#ggbiplot(pca_res,ellipse=TRUE,choices=c(3,4),labels=rownames(data), groups=data$Age, var.axes=FALSE) #No loadings
+
+################Styling
+
+biplot <- ggbiplot(pca_res_sqrt,ellipse=TRUE,choices=c(3,4),labels=rownames(meta), groups=meta$BMI.group, var.axes=TRUE)
+
+biplot +
+  scale_colour_jco(name = "BMI") +
+  #scale_fill_manual(values=rep(col_fil,5),name="Genus")+
+  theme_classic() +
+  theme(
+    #text = element_text(linewidth = 10, colour = "Black"),
+        axis.line=element_line(size=0.5),
+        #panel.border = element_blank(),
+        axis.text=element_text(size = 10, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        #strip.background = element_rect(colour = "white", fill = "white"),
+        #axis.text.x=element_text(angle = 45, hjust = 1),
+        strip.text.x = element_text(angle = 0, size=12, face = "bold")
+        #legend.position = "none"
+  )
+
+        
+```
+
+Pairwise PERMANOVA
+
+```{r}
+dist <- df %>%
+  dplyr::mutate(across(where(is.numeric), ~ifelse(. < 0, NA_real_, sqrt(.)))) %>%
+  dist(.,"euclidean")
+
+```
+
+Days
+```{r}
+RVAideMemoire::pairwise.perm.manova(dist ,meta$Days,nperm=9999)
+```
+
+BMI
+```{r}
+RVAideMemoire::pairwise.perm.manova(dist ,meta$BMI.group,nperm=9999)
+```
+
+## Loadings plot and variable contributions
+
+```{r}
+library(factoextra)
+
+res.pca <- pca_res_sqrt
+
+#fviz_pca_biplot(res.pca, repel = TRUE)
+
+
+
+sl(metab.pca.var,fviz_pca_var(res.pca, col.var="contrib",
+             geom ="text",
+             gradient.cols = c("darkgrey","black"),
+             repel = TRUE # Avoid text overlapping
+             ), overwrite = T)
+
+metab.pca.var
+
+sl(metab.res.pca1,fviz_contrib(res.pca, choice = "var", axes = 1, top = 10), overwrite = T)
+metab.res.pca1
+
+sl(metab.res.pca2,fviz_contrib(res.pca, choice = "var", axes = 2, top = 10), overwrite = T)
+metab.res.pca2
+
+```
+
+# Effect size
+
+## Sqrt
+
+```{r, eval = T, include = T, echo = F, message = F}
+#import.taxonomy = read.table('virome_taxonomy_LCA_known.txt', header = T)
+
+cure.data <- meta
+rownames <- rownames(cure.data)
+
+#Remove NA columns
+cure.data <- cure.data[ , ! apply( cure.data , 2 , function(x) all(is.na(x)) ) ]
+
+#Set numeric column class
+cure.data <- cure.data %>% plyr::mutate(across(where(is.character)),as.factor)
+
+#Sqrt normalise and transpose
+X <- df %>%
+  dplyr::mutate(across(where(is.numeric), ~ifelse(. < 0, NA_real_, sqrt(.))))
+
+names <- colnames(X)
+rownames <- rownames(X)
+X <- X %>% as.matrix() %>% t() %>% as.data.frame()
+rownames(X) <- names
+colnames(X) <- rownames
+
+Y.all = cure.data
+
+#Select relevant numeric column
+
+Y <- dplyr::select(Y.all,all_of(
+  append(effect.size.variables,"RCID")) #Omit batch+dna conc variables as these are unique to sequencing data
+  ) %>% 
+  tibble::column_to_rownames("RCID")
+
+#Y <- Y.all %>% dplyr::select_if(is.factor)
+
+#,"Weight_sept_2020", "Glucose_sept_GGT" , "Insulin_sept_GGT", "Cpeptide_sept_GGT", "HbA1c", "Glucagon_sept_GGT", "HOMA_IR"
+
+colnames(Y) #Check remaining columns
+
+###Select only numeric metadata culumns
+
+Y  <- Y %>%dplyr::mutate(across(everything(), as.numeric))
+
+colnames(Y) #Check remaining columns
+
+##vifcor
+##collinearity
+
+#Select relevant columns for that are non-collinear
+# 
+# 
+# Y.ad = Y %>% as.data.frame()
+# #Y.ad <- dplyr::select(Y,-c("HMO.group"))
+# 
+# # Remove samples with missing metadata
+# Y.ad <- Y.ad %>% drop_na() %>% as.data.frame()
+# ## Remove corresponding samples from metadata
+# colnames(X) <- df.id$RCID
+# X.ad <- X %>% dplyr::select(rownames(Y.ad))
+
+```
+
+#### Bray curttis - constrained by time
+
+```{r, eval = T, include = T, echo = F, message = F, warning =  F, fig.width=10, fig.height=6, fig.fullwidth = TRUE}
+###############Anova on capscale - all variables
+
+anova.m <- matrix(nrow = 0, ncol =6) #Create matrix for results
+colnames(anova.m) <- c("Df","SumOfSqs","F","Pr.F","Residual.Df","Residual.SumOfSqs")                
+for (i in colnames(dplyr::select(Y,-c("Days")))){
+  X.sub <- X[,!is.na(Y[[i]])]
+  Y.sub <- Y[!is.na(Y[[i]]), ]
+  anova <- as.matrix(anova.cca(capscale(t(X.sub) ~ Y.sub[,i] + Days, Y.sub, dist = "bray"),permutations = how(nperm=9999)))
+  anova <- c(anova[1,],anova[2,1:2])
+  anova.m <-rbind(anova.m,anova)
+}
+
+rownames(anova.m) <- colnames(dplyr::select(Y,-c("Days")))
+
+#Prepare for plotting
+
+anova.dat <- anova.m %>%
+  as.data.frame() %>%
+  tibble::add_column(Variable = rownames(anova.m),.name_repair = "minimal") %>%
+  arrange(F)
+
+#Add adjusted p-values
+anova.dat$Pr.F.adj <- p.adjust(anova.dat$Pr.F, method = 'holm')
+
+
+#Calculate sum of squares
+anova.dat$R2 <- anova.dat$SumOfSqs / (anova.dat$SumOfSqs + anova.dat$Residual.SumOfSqs)
+
+anova.dat <- anova.dat %>%
+  arrange(R2)
+
+##Fancy plot
+
+anova.melt <- tidyr::pivot_longer(anova.dat,cols=c("R2"), names_to='measure', values_to="value") %>%
+  add_significance(p.col = "Pr.F.adj", output.col = "PrF.sym",
+                   cutpoints = c(0, 1e-04, 0.001, 0.01, 0.05, 0.1,1),
+                   symbols = c("****", "***", "**", "*", "\U0387", "")
+                   )
+
+anova.melt.metab.milk.time <- anova.melt
+
+permanova.metab.milk.day <- ggbarplot(anova.melt,
+                                         x="Variable",
+                                         y="value",
+                                         #color = "Variable",
+                                         orientation = c("horizontal"),
+                                         color = NA,
+                                         fill = "measure",
+                                         position=position_dodge(0.7),
+                                         label = anova.melt$PrF.sym,
+                                         lab.size = 9,
+                                         lab.vjust = 0.7,
+                                         lab.hjust = -0.3
+                                         
+) +
+  #stat_pvalue_manual(
+  #  adonis.melt,  label = "PrF.sym", tip.length = 0.01
+  #) +
+  #geom_hline(yintercept = 0.05) +
+  ggtitle("Constrained for time") +
+  ylab(expression(R^2~"value")) +
+  #scale_y_log10()+
+  scale_fill_jco()
+
+permanova.metab.milk.day
+
+save(anova.melt.metab.milk.time,file="results/effect_size_milk_metab.RData")
+```
+
+#### Bray curttis - constrained by time + lewis +secretor
+
+```{r, eval = T, include = T, echo = F, message = F, warning =  F, fig.width=10, fig.height=6, fig.fullwidth = TRUE}
+###############Anova on capscale - all variables
+
+anova.m <- matrix(nrow = 0, ncol =6) #Create matrix for results
+colnames(anova.m) <- c("Df","SumOfSqs","F","Pr.F","Residual.Df","Residual.SumOfSqs")                
+for (i in colnames(dplyr::select(Y,-c("Days","Lewis","Secretor")))){
+  X.sub <- X[,!is.na(Y[[i]])]
+  Y.sub <- Y[!is.na(Y[[i]]), ]
+  anova <- as.matrix(anova.cca(capscale(t(X.sub) ~ Y.sub[,i] + Days+Secretor+Lewis, Y.sub, dist = "bray"),permutations = how(nperm=9999)))
+  anova <- c(anova[1,],anova[2,1:2])
+  anova.m <-rbind(anova.m,anova)
+}
+
+rownames(anova.m) <- colnames(dplyr::select(Y,-c("Days","Lewis","Secretor")))
+
+#Prepare for plotting
+
+anova.dat <- anova.m %>%
+  as.data.frame() %>%
+  tibble::add_column(Variable = rownames(anova.m),.name_repair = "minimal") %>%
+  arrange(F)
+
+#Add adjusted p-values
+anova.dat$Pr.F.adj <- p.adjust(anova.dat$Pr.F, method = 'holm')
+
+
+#Calculate sum of squares
+anova.dat$R2 <- anova.dat$SumOfSqs / (anova.dat$SumOfSqs + anova.dat$Residual.SumOfSqs)
+
+anova.dat <- anova.dat %>%
+  arrange(R2)
+
+##Fancy plot
+
+anova.melt <- tidyr::pivot_longer(anova.dat,cols=c("R2"), names_to='measure', values_to="value") %>%
+  add_significance(p.col = "Pr.F.adj", output.col = "PrF.sym",
+                   cutpoints = c(0, 1e-04, 0.001, 0.01, 0.05, 0.1,1),
+                   symbols = c("****", "***", "**", "*", "\U0387", "")
+                   )
+
+anova.melt.metab.milk.day.lewis.secretor <- anova.melt
+
+permanova.metab.milk.day.lewis.secretor <- ggbarplot(anova.melt,
+                                         x="Variable",
+                                         y="value",
+                                         #color = "Variable",
+                                         orientation = c("horizontal"),
+                                         color = NA,
+                                         fill = "measure",
+                                         position=position_dodge(0.7),
+                                         label = anova.melt$PrF.sym,
+                                         lab.size = 9,
+                                         lab.vjust = 0.7,
+                                         lab.hjust = -0.3
+                                         
+) +
+  #stat_pvalue_manual(
+  #  adonis.melt,  label = "PrF.sym", tip.length = 0.01
+  #) +
+  #geom_hline(yintercept = 0.05) +
+  ggtitle("Constrained for time+Lewis+Secretor") +
+  ylab(expression(R^2~"value")) +
+  #scale_y_log10()+
+  scale_fill_jco()
+
+permanova.metab.milk.day.lewis.secretor
+
+save(permanova.metab.milk.day.lewis.secretor,file="results/effect_size_milk_metab_sec.RData")
+```
+
+#### Secretor + lewis constrained comparison
+
+```{r, eval = T, include = T, echo = F, message = F, warning =  F, fig.width=10, fig.height=6, fig.fullwidth = TRUE}
+ggarrange(permanova.metab.milk.day,permanova.metab.milk.day.lewis.secretor)
+```
+
+# Rabuplot for metabolites
+
+```{r}
+
+
+samples <- sample_data(meta)
+rownames(samples) <- samples$RCID
+
+
+tax <- phyloseq::tax_table(as.data.frame(colnames(df)))
+
+otu <- otu_table(log10(df+1)
+                 ,taxa_are_rows=FALSE)
+
+colnames(otu) <- rownames(tax)
+rownames(otu) <- row.names(samples)
+
+sl(psm,phyloseq(otu,tax,samples),overwrite=TRUE)
+```
+
+```{r}
+#remotes::install_github("jstokholm/rabuplot")
+library(rabuplot)
+
+#ps <- subset_samples(PSB.all, Days %in% c("3","30","60","90"))
+psm@sam_data$Days <- factor(psm@sam_data$Days , levels = rev(c("3","30","60","90")))
+
+psm@sam_data$BMI.group <- factor(psm@sam_data$BMI.group , levels = rev(levels(psm@sam_data$BMI.group)))
+
+psm@sam_data$Secretor <- ifelse(psm@sam_data$Secretor == 1, "Secretor", "Non-secretor")
+
+tax <- as.data.frame(phyloseq::tax_table(psm)) %>%
+ dplyr::mutate(`metabolites` = ta1)
+psm@tax_table <- phyloseq::tax_table(as.matrix(tax))
+```
+
+## Metabolites vs days
+
+```{r}
+sl(rabu.metab.milk.days,
+   rabuplot(
+  psm,
+  violin = FALSE,
+  log = TRUE,
+  #log_max = 200,
+  type = "metabolites",
+  relative_abun = FALSE,
+  N_taxa = 15,
+  predictor = "Days", 
+  stats = "non-parametric",
+  italic_names = FALSE,
+  p_val = TRUE,
+  p_stars =TRUE,
+  text_angle_x = 45,
+  colors = col_fil[1:4],
+  main = "Milk metabolites - days",
+  xlabs = "mmol/ml",
+  legend_title = "Days after birth")+
+  # scale_y_continuous(limits=c(0,2.5),labels = scales::label_number(accuracy = 1,scale = 100)), 
+  scale_y_log10(breaks=c(.001,.01,0.3,1,1.7,3,9),labels=c("0","1","2","5","50","200", "P-value")),
+    overwrite=T)
+
+
+rabu.metab.milk.days
+```
+
+```{r,eval=F,inculde=F}
+sl(rabu.metab.milk.days,
+   rabuplot(
+  psm,
+  violin = FALSE,
+  log = TRUE,
+  #log_max = 200,
+  type = "metabolites",
+  relative_abun = FALSE,
+  N_taxa = 15,
+  predictor = "Days", 
+  stats = "non-parametric",
+  italic_names = FALSE,
+  p_val = TRUE,
+  p_stars =TRUE,
+  text_angle_x = 45,
+  colors = col_fil[1:4],
+  main = "",
+  xlabs = "mmol/ml",
+  legend_title = "Days after birth")+
+  # scale_y_continuous(limits=c(0,2.5),labels = scales::label_number(accuracy = 1,scale = 100)), 
+  scale_y_log10(breaks=c(.001,.01,0.3,1,1.7,3,9),labels=c("0","1","2","5","50","200", "P-value")),
+    overwrite=T)
+
+rabu.metab.milk.days
+```
+
+### Days by BMI group
+
+```{r,eval=T,inculde=T}
+sl(rabu.metab.milk.bmi,
+   rabuplot(
+  psm,
+  violin = FALSE,
+  log = TRUE,
+  #log_max = 200,
+  type = "metabolites",
+  relative_abun = FALSE,
+  N_taxa = 15,
+  predictor = "BMI.group", 
+  stats = "non-parametric",
+  italic_names = FALSE,
+  p_val = TRUE,
+  p_stars =TRUE,
+  text_angle_x = 45,
+  colors =  col_fil[3:1],
+  main = "",
+  xlabs = "mmol/ml",
+  legend_title = "Pre-pregnancy BMI")+
+  # scale_y_continuous(limits=c(0,2.5),labels = scales::label_number(accuracy = 1,scale = 100)), 
+  scale_y_log10(breaks=c(.001,.01,0.3,1,1.7,3,9),labels=c("0","1","2","5","50","200", "P-value")),
+    overwrite=T)
+
+rabu.metab.milk.bmi
+```
+
+```{r,eval=F,inculde=F}
+sl(rabu.metab.milk.bmi.roel,
+   rabuplot(
+  psm,
+  violin = FALSE,
+  log = TRUE,
+  #log_max = 200,
+  type = "metabolites",
+  relative_abun = FALSE,
+  N_taxa = 15,
+  predictor = "BMI.group", 
+  stats = "non-parametric",
+  italic_names = FALSE,
+  p_val = TRUE,
+  p_stars =TRUE,
+  text_angle_x = 45,
+  colors = c("darkgreen","darkgoldenrod","darkred"),
+  main = "",
+  xlabs = "mmol/ml",
+  legend_title = "Pre-pregnancy BMI")+
+  # scale_y_continuous(limits=c(0,2.5),labels = scales::label_number(accuracy = 1,scale = 100)), 
+  scale_y_log10(breaks=c(.001,.01,0.3,1,1.7,3,9),labels=c("0","1","2","5","50","200", "P-value")),
+    overwrite=T)
+
+rabu.metab.milk.bmi.roel
+```
+
+## Metabolites vs secretor status
+
+```{r}
+psm.pseu <- psm
+psm.pseu@otu_table <- otu_table(psm.pseu) + 0.0001 # Addd small pseudocount to allow significance detection for metabolites with concentration 0 in one secretor group
+
+sl(rabu.metab.milk.sec,
+  rabuplot(
+  psm,
+  violin = FALSE,
+  log = TRUE,
+  #log_max = 200,
+  type = "metabolites",
+  relative_abun = FALSE,
+  N_taxa = 15,
+  predictor = "Secretor", 
+  stats = "non-parametric",
+  italic_names = FALSE,
+  p_val = TRUE,
+  p_stars =TRUE,
+  p_adjust = TRUE,
+  text_angle_x = 45,
+  colors = col_fil[1:2],
+  main = "",
+  xlabs = "mmol/ml",
+  legend_title = "Secretor status")+
+  # scale_y_continuous(limits=c(0,2.5),labels = scales::label_number(accuracy = 1,scale = 100)), 
+  scale_y_log10(breaks=c(.001,.01,0.3,1,1.7,3,9),labels=c("0","1","2","5","50","200", "P-value")),
+    overwrite=T)
+
+rabu.metab.milk.sec
+```
+
+### Arrange
+
+```{r}
+ggarrange(rabu.metab.milk.days,rabu.metab.milk.sec,nrow=1)
+```
+
+
+
+### Top 40
+
+```{r}
+psm.bmi <- subset_samples(psm, !is.na(BMI.group))
+psm.bmi@sam_data$BMI.group <- factor(psm.bmi@sam_data$BMI.group , levels = rev(levels(psm.bmi@sam_data$BMI.group)))
+
+sl(rabu.metab.milk.bmi.40,rabuplot(
+  psm.bmi,
+  violin = FALSE,
+  log = TRUE,
+  type = "metabolites",
+  relative_abun = FALSE,
+  N_taxa = 75,
+  predictor = "BMI.group", 
+  italic_names = FALSE,
+  stats = "parametric",
+  p_stars =TRUE,
+  colors = col_fil[3:1],
+  text_angle_x = 45,
+  legend_title = "BMI group",
+  main = "Milk metabolites",
+  xlabs = "mmol/ml")+
+  # scale_y_continuous(limits=c(0,2.5),labels = scales::label_number(accuracy = 1,scale = 100)), 
+  scale_y_log10(breaks=c(.001,.01,0.3,1,1.7,3,9),labels=c("0","1","2","5","50","200", "P-value")),
+    overwrite=T)
+
+rabu.metab.milk.bmi.40
+```
+
+### By days
+
+```{r}
+psm.rev <- psm.bmi
+psm.rev@sam_data$Days <- factor(psm.rev@sam_data$Days, levels = rev(levels(psm.rev@sam_data$Days)))
+
+rabu.metab.milk.bmi.days <- rabuplot(
+  psm.rev,
+  violin = FALSE,
+  log = TRUE,
+  type = "metabolites",
+  relative_abun = FALSE,
+  N_taxa = 20,
+  predictor = "BMI.group", 
+  italic_names = FALSE,
+  stats = "parametric",
+  p_stars =TRUE,
+  colors = col_fil[3:1],
+  main = "Milk metabolites",
+  xlabs = "mmol/ml",
+  facet_wrap = "Days")+
+  # scale_y_continuous(limits=c(0,2.5),labels = scales::label_number(accuracy = 1,scale = 100)), 
+  scale_y_log10(breaks=c(.001,.01,0.3,1,1.7,3,9),labels=c("0","1","2","5","50","200", "P-value"))
+
+rabu.metab.milk.bmi.days
+```
+
+# RDA plot
+
+```{r}
+sl(psm,phyloseq(otu,tax,samples),overwrite=FALSE)
+
+#psm <- phyloseq(otu,tax,samples)
+
+meco_dat <- phyloseq2meco(
+  psm)
+
+meco_dat$tidy_dataset()
+
+#Tidy up taxonomy
+meco_dat$tax_table <- tidy_taxonomy(meco_dat$tax_table)
+
+#Calculate relative abundences
+meco_dat$cal_abund()
+
+#Set days as factor
+meco_dat$sample_table$Days <- factor(meco_dat$sample_table$Days,levels=c("3","30","60","90"))
+
+#Calculta beta diversity metrics
+
+meco_dat$cal_betadiv(unifrac = FALSE)
+```
+# Explainable class
+
+Creating trans_env object 
+
+```{r, warning = F}
+#Select most significant variables
+top.metab.vars <- anova.melt.metab.milk.time %>%
+  arrange(-value) %>%
+  slice_head(n = 10)
+
+
+
+env <- select(meco_dat$sample_table,all_of(c(top.metab.vars$Variable,"Days"))) %>%
+  mutate(Days = as.numeric(as.character(Days))
+         )  %>%
+ dplyr::mutate(Days = as.numeric(as.character(Days)),
+         Secretor = as.numeric(as.character(Secretor)),
+         Lewis = as.numeric(as.character(Lewis)),) %>%
+  #select(-c("AB.infant")) %>%
+  dplyr::mutate_all(as.numeric) %>% #select(where(is.numeric)) %>%
+  #drop_na(Gestational.age) %>%
+  drop_na() %>%
+  select(where(~ !any(is.na(.))))
+
+
+colnames(env) <- str_replace_all(colnames(env), c("\\." = " ",
+                                                              `BMI delta`="delta BMI",
+                                                              delta="Δ",
+                                                              `3m`="3 months",
+                                                              waz = "WAZ",
+                                                              whz = "WHZ",
+                                                              haz = "HAZ",
+                                                              AB="Antibiotics",
+                                                              GDM="Gestational diabetes",
+                                                              Secretor="Secretor status",
+                                                              Lewis="Lewis status")
+                    )
+  
+t1 <- trans_env$new(dataset = meco_dat,
+                    add_data = env)
+```
+
+## PCA RDA
+
+```{r, warning = F}
+# use bray-curtis distance for dbRDA
+t1$cal_ordination(method ="RDA",scale_species = TRUE, taxa_level = "ta1")
+# t1$res_rda is the result list stored in the object
+
+t1$trans_ordination(adjust_arrow_length = TRUE,
+                    min_perc_env = 0.2,
+                    max_perc_env = 1.5,
+                    min_perc_tax = 2,
+                    max_perc_tax = 4)
+# t1$res_rda_trans is the transformed result for plotting
+sl(rda.plot.metab,
+   t1$plot_ordination(plot_color = "Days",
+                   plot_type = c("point"),
+                   env_text_size = 4,
+                   taxa_text_size = 4,
+                   taxa_text_color="darkred",
+                   taxa_arrow_color="darkred",
+                   point_alpha=0.2,
+                   taxa_nudge_x = c(-0.05,0.1,-0.1,-0.3,-0.3,0,-0.05,0,0,0.1),
+                   taxa_nudge_y = c(-0.1, #2-fl
+                                    -0.03, #3-FL
+                                    0, #HMO 5.10
+                                    0.07, #LNDFH I
+                                    0.02, #HMO 5.29
+                                    0, #LNT
+                                    0, #HMO 1.70
+                                    0.2, #LNDFH II
+                                    -0.2, #LDFT
+                                    0) # Glutamine
+                   )+
+  ggrepel::geom_text_repel(force=30),
+  overwrite = TRUE
+)
+
+rda.plot.metab
+```
+
+## PCOA RDA
+
+```{r, warning = F}
+# use bray-curtis distance for dbRDA
+t1$cal_ordination(method = "dbRDA", use_measure = "bray")
+# t1$res_rda is the result list stored in the object
+t1$trans_ordination(adjust_arrow_length = TRUE, max_perc_env = 1.5)
+# t1$res_rda_trans is the transformed result for plotting
+t1$plot_ordination(plot_color = "Days", plot_type = c("point"))
+```
+
+
+## Metabolites vs biomarkers
+
+```{r, warning = F}
+env <- select(meco_dat$sample_table,matches("bio_")) %>%
+  drop_na()
+
+t1 <- trans_env$new(dataset = meco_dat,
+                    add_data = env)
+```
+
+```{r, warning = F}
+# 'p_adjust_type = "Env"' means p adjustment is performed for each environmental variable separately.
+t1$cal_cor(use_data = "ta1", p_adjust_method = "fdr", p_adjust_type = "Env")
+```
+
+Then, we can plot the correlation results using plot_cor function.
+
+```{r, warning = F}
+# default ggplot2 method with clustering
+#t1$plot_cor()
+```
+
+There are too many genera. We can use the filter_feature parameter in plot_cor to filter some taxa that do not have any significance < 0.001.
+
+```{r, warning = F}
+# filter genera that donot have at least one ** or ***
+t1$plot_cor(filter_feature = c("", "*"), cluster_ggplot = "both")
+```
+
+
+
+# Session info
+
+```{r}
+sessionInfo()
+```

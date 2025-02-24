@@ -1,0 +1,735 @@
+---
+title: "6.1_Figures_output"
+author: "Rasmus Riemer Jakobsen"
+date: "`r Sys.time()`"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+link-citations: yes
+---
+
+```{r setup, include=F, message=F, warning=F}
+#Set working directory to script directory 
+
+#Load packages
+source("Supplementary_scripts/package_load_install.R")
+#Load utility functions
+source("Supplementary_scripts/utils.R")
+
+dir.create("results", showWarnings = FALSE, recursive = TRUE)
+
+#Set theme and figure font
+# extrafont::loadfonts(device="win")
+# theme_set(theme_classic(base_family = "Comic Sans MS"))
+theme_set(theme_classic())
+
+knitr::opts_chunk$set(fig.width=12, fig.height=8, fig.fullwidth = TRUE)
+
+#Coulour pallettes
+col_fil <- brewer.pal(8, "Dark2")#pal_jco("default")(10)
+
+col_scale <- scale_color_jco()
+```
+
+```{r}
+source(here::here("Supplementary_scripts","package_load_install.R")) 
+source(here::here("Supplementary_scripts","utils.R")) # please see the src-folder for some custom functions used in 
+#source(here::here("src", "run_clusterprofiler.R"))
+
+library(ggpubr)
+```
+
+# Figure 1
+
+```{r}
+library(magick)
+
+A <- ggplot() + annotation_custom(rasterGrob(image_read("Figures/Sample_timeline.png")), -Inf, Inf, -Inf, Inf) +
+  theme_void() +  # Removes most plot decoration
+  theme(plot.background = element_blank(),  # Additional adjustments
+        plot.margin = unit(c(0,0,0,0), "lines"))  # Removes margins
+
+
+B <- readRDS(here::here("results", "RData","4.1_Metabolome_milk","metab.pca.milk.days.Rds"))
+
+C <- readRDS(here::here("results", "RData","4.1_Metabolome_milk","metab.pca.milk.secretor.Rds"))
+
+BC <- ggarrange(B+ggtitle("Milk metabolites - days")+theme(plot.title = element_text(hjust = 0.5)),
+                C+ggtitle("Milk metabolites - secretor status")+theme(plot.title = element_text(hjust = 0.5)),
+          nrow = 1,
+          labels = c("B","C"),
+          font.label = list(size = 25),
+          hjust = 0.3,
+          vjust = 1,
+          legend = "bottom"
+          )
+
+D <- readRDS(here::here("results", "RData","4.1_Metabolome_milk","rabu.metab.milk.days.Rds"))
+
+E <- readRDS(here::here("results", "RData","4.1_Metabolome_milk","rabu.metab.milk.sec.Rds"))
+
+DE <- ggarrange(D+theme(legend.position = "none")+ggtitle(""),
+                E+theme(legend.position = "none")+ggtitle(""),
+          nrow = 1,
+          labels = c("D","E"),
+          font.label = list(size = 25),
+          hjust = 0.3,
+          vjust = 1
+          )
+
+
+ggarrange(A,BC,DE,
+          nrow = 3,
+          labels = c("A","",""),
+          font.label = list(size = 25),
+          heights = c(1,1.5,2)
+          #widths = c(1.2,1)
+          ) +
+  theme(plot.margin = unit(c(0,0,0,0.5), "cm")) 
+
+ggsave("Figures/Figure 1.tiff", compression = "lzw",width = 25, height = 28, units = "cm", dpi = 400) 
+
+ggsave("Figures/Figure 1.pdf",width = 25, height = 28, units = "cm", dpi = 400)
+
+# ggarrange(A,B,C,D,E,F,
+#           nrow = 3,
+#           ncol=2,
+#           labels = c("A","B","C","D","E","F"),
+#           font.label = list(size = 25),
+#           hjust = 0.3,
+#           vjust = 1,
+#           heights = c(1,1.5,1),
+#           align = "hv",
+#           common.legend = TRUE
+#           #widths = c(1.2,1)
+#           ) +
+#   theme(plot.margin = unit(c(0,0,0,0.5), "cm")) 
+
+ggsave("Figures/Figure 1.tiff", compression = "lzw",width = 25, height = 30, units = "cm", dpi = 400) 
+
+ggsave("Figures/Figure 1.pdf",width = 25, height = 30, units = "cm", dpi = 400)  
+```
+
+```{r, eval = F}
+B+theme(text=element_text(family="Comic Sans MS"))
+B+theme(text=element_text(family="serif"))
+
+ggplot(mpg, aes(x = displ, y = hwy)) +
+  geom_point() +
+  labs(title = "Fuel Efficiency", x = "Engine Displacement", y = "Highway MPG") +
+  theme(
+    plot.title = element_text(family = "Liberation Sans", size = 14, face = "bold"),
+    axis.title.x = element_text(family = "Times New Roman", size = 12),
+    axis.title.y = element_text(family = "Courier", size = 12),
+    axis.text = element_text(family = "Arial", size = 10)
+  )
+
+windowsFonts("Arial" = windowsFont("Arial"))
+
+ggplot(mpg, aes(x = displ, y = hwy)) +
+  geom_point() +
+  labs(title = "Fuel Efficiency", x = "Engine Displacement", y = "Highway MPG") +
+  theme(text = element_text(family = "Comic Sans MS"))
+
+extrafont::font_import()
+
+extrafont::loadfonts(device="win")
+
+ggarrange(
+ggplot(mpg, aes(x = displ, y = hwy)) +
+  geom_point() +
+  labs(title = "Fuel Efficiency", x = "Engine Displacement", y = "Highway MPG"),
+  
+  
+ggplot(mpg, aes(x = displ, y = hwy)) +
+  geom_point() +
+  labs(title = "Fuel Efficiency", x = "Engine Displacement", y = "Highway MPG") +
+  theme(text = element_text(family = "serif")),
+
+ggplot(mpg, aes(x = displ, y = hwy)) +
+  geom_point() +
+  labs(title = "Fuel Efficiency", x = "Engine Displacement", y = "Highway MPG") +
+  theme(text = element_text(family = "Comic Sans MS")),
+
+ggplot(mpg, aes(x = displ, y = hwy)) +
+  geom_point() +
+  labs(title = "Fuel Efficiency", x = "Engine Displacement", y = "Highway MPG") +
+  theme(text = element_text(family = "Times New Roman")),
+nrow = 2
+)
+```
+
+# Figure S1
+
+```{r}
+library(ggplotify)
+
+
+A <- readRDS(here::here("results", "RData","2.1_Milk_and_faecal_characterization","alpha.metrics.milk.days.Rds"))
+
+B <- readRDS(here::here("results", "RData","2.1_Milk_and_faecal_characterization","alpha.metrics.faec.days.Rds"))
+
+AB <- ggarrange(A,B,
+          nrow = 1,
+          labels = c("A","B"),
+          font.label = list(size = 25),
+          hjust = 0.3,
+          vjust = 1
+          )
+
+# C <- readRDS(here::here("results", "RData","4.1_Metabolome_milk","upset.milk.time.Rds"))
+# 
+# D <- readRDS(here::here("results", "RData","4.1_Metabolome_milk","upset.faeces.time.Rds"))
+# 
+# CD <- ggarrange(as.ggplot(C)+theme(plot.margin = unit(c(0,0.5,0.3,-2.5), "cm"),plot.title = element_text(hjust = 0.5))+ggtitle("Milk"),
+#                as.ggplot(D)+theme(plot.margin = unit(c(0,0,0,-2.5), "cm"),plot.title = element_text(hjust = 0.5))+ggtitle("Infant faeces"),
+#           nrow = 1,
+#           labels = c("A","B"),
+#           font.label = list(size = 25),
+#           hjust = 0.3,
+#           vjust = 1)
+# 
+# AB
+
+C <- readRDS(here::here("results", "RData","3.2_Transfer_by_ASV","mean.freq.plot.milk.genus.Rds"))
+
+D <- readRDS(here::here("results", "RData","3.2_Transfer_by_ASV","mean.freq.plot.faeces.genus.Rds"))
+
+CD <- ggarrange(C+theme(plot.margin = unit(c(0,0.5,0,1), "cm"),plot.title = element_text(hjust = 0.5))+ggtitle("Milk"),
+                D+theme(plot.margin = unit(c(0,0.5,0,1), "cm"),plot.title = element_text(hjust = 0.5))+ggtitle("Infant faeces"),
+          nrow = 1,
+          labels = c("C","D"),
+          font.label = list(size = 25),
+          hjust = 0.3,
+          vjust = 1
+          ) 
+
+#CD <- annotate_figure(CD,"Infant faeces")
+
+E <- readRDS(here::here("results", "RData","2.1_Milk_and_faecal_characterization","rabu.box.milk.days.Rds"))
+
+F <- readRDS(here::here("results", "RData","2.1_Milk_and_faecal_characterization","rabu.box.faec.days.Rds"))
+
+EF <- ggarrange(E,F,
+          nrow = 1,
+          labels = c("E","F"),
+          font.label = list(size = 25),
+          hjust = 0.3,
+          vjust = 1,
+          common.legend = TRUE,
+          legend = "right"
+          )
+
+  
+ggarrange(AB,CD,EF,
+          nrow = 3,
+          heights = c(1,1.2,1.5)
+          #widths = c(1.2,1)
+          ) +
+  theme(plot.margin = unit(c(0,0,0,0.5), "cm")) 
+
+ggsave("Figures/Figure S1.tiff", compression = "lzw",width = 25, height = 25, units = "cm", dpi = 400) 
+
+ggsave("Figures/Figure S1.pdf",width = 25, height = 25, units = "cm", dpi = 400)
+```
+
+# Figure 2
+
+```{r}
+
+A <- readRDS(here::here("results", "RData","2.1_Milk_and_faecal_characterization","barplot.milk.days.genus.Rds"))
+
+B <- readRDS(here::here("results", "RData","2.1_Milk_and_faecal_characterization","barplot.faecal.days.genus.Rds"))
+
+AB <- ggarrange(A,B,
+          nrow = 1,
+          labels = c("A","B"),
+          font.label = list(size = 25),
+          hjust = 0.3,
+          vjust = 1,
+          widths = c(1.1,1)
+          ) 
+
+C <- readRDS(here::here("results", "RData","2.1_Milk_and_faecal_characterization","beta.milk.days.Rds"))#+ theme(legend.position="top")
+
+D <- readRDS(here::here("results", "RData","2.1_Milk_and_faecal_characterization","beta.faec.days.Rds"))
+
+CD <- ggarrange(C,D,
+          common.legend = T, legend="right",
+          nrow = 1,
+          labels = c("C","D"),
+          font.label = list(size = 25),
+          hjust = 0.3,
+          vjust = 1
+          #widths = c(1.2,1)
+          )
+
+E <- readRDS(here::here("results", "RData","2.1_Milk_and_faecal_characterization","rabu.milk.days.Rds"))
+
+F <- readRDS(here::here("results", "RData","2.1_Milk_and_faecal_characterization","rabu.faec.days.Rds"))
+
+EF <- ggarrange(E,F,
+          common.legend = T, legend="right",
+          nrow = 1,
+          labels = c("E","F"),
+          font.label = list(size = 25),
+          hjust = 0.3,
+          vjust = 1
+          #widths = c(1.2,1)
+          )
+
+ggarrange(AB,CD,EF,
+          nrow = 3,
+          labels = c("A"),
+          font.label = list(size = 25),
+          hjust = 0.3,
+          vjust = 1,
+          heights = c(1,1,1.5),
+          align = "v",
+          common.legend = TRUE
+          #widths = c(1.2,1)
+          ) +
+  theme(plot.margin = unit(c(0,0,0,0.5), "cm")) 
+
+
+ggsave("Figures/Figure 2.tiff", compression = "lzw",width = 25, height = 26, units = "cm", dpi = 400) 
+
+ggsave("Figures/Figure 2.pdf",width = 25, height = 26, units = "cm", dpi = 400)  
+```
+
+# Figure S2
+
+```{r, warning = F}
+A <- readRDS(here::here("results", "RData","4.1_Metabolome_milk","metab.pca.var.Rds"))
+
+B <- readRDS(here::here("results", "RData","4.1_Metabolome_milk","metab.res.pca1.Rds"))
+
+C <- readRDS(here::here("results", "RData","4.1_Metabolome_milk","metab.res.pca2.Rds"))
+
+BC <- ggarrange(B,C,
+          nrow = 1,
+          labels = c("B","C"),
+          font.label = list(size = 25),
+          hjust = 0.3,
+          vjust = 1
+          )
+
+
+# ggarrange(A,BC,
+#           nrow = 1,
+#           labels = c("A",""),
+#           font.label = list(size = 25),
+#           hjust = 0.3,
+#           vjust = 1,
+#           widths = c(2,1)
+#           ) +
+#   theme(plot.margin = unit(c(0,0,0,0.5), "cm")) 
+
+ggarrange(A,BC,
+          nrow = 2,
+          labels = c("A",""),
+          font.label = list(size = 25),
+          hjust = 0.3,
+          vjust = 1,
+          heights = c(2,1)
+          ) +
+  theme(plot.margin = unit(c(0,0,0,0.5), "cm")) 
+
+ggsave("Figures/Figure S2.tiff", compression = "lzw",width = 25, height = 25, units = "cm", dpi = 400) 
+
+ggsave("Figures/Figure S2.pdf",width = 25, height = 25, units = "cm", dpi = 400)
+
+```
+
+# Figure 3 - BMI diff abund and PCA/PCoA
+
+```{r}
+A <- readRDS(here::here("results", "RData", "4.1_Metabolome_milk", "metab.pca.milk.bmi.Rds"))
+
+B <- readRDS(here::here("results", "RData", "4.1_Metabolome_milk", "rabu.metab.milk.bmi.Rds"))
+
+
+C <- readRDS(here::here("results", "RData","2.1_Milk_and_faecal_characterization","alpha.shannon.milk.bmi.Rds"))
+
+D <- readRDS(here::here("results", "RData","2.1_Milk_and_faecal_characterization","beta.milk.BMI.Rds"))
+
+E <- readRDS(here::here("results", "RData","2.1_Milk_and_faecal_characterization","rabu.milk.BMI.Rds"))
+
+F <- readRDS(here::here("results", "RData","2.1_Milk_and_faecal_characterization","alpha.shannon.faec.bmi.Rds"))
+
+G <- readRDS(here::here("results", "RData","2.1_Milk_and_faecal_characterization","beta.faec.BMI.Rds"))
+
+H <- readRDS(here::here("results", "RData","2.1_Milk_and_faecal_characterization","rabu.faec.BMI.Rds"))
+
+AB <- ggarrange(A+theme(legend.position = "none"),
+                B+theme(legend.position = "none"),
+          nrow = 1,
+          labels = c("A","C"),
+          font.label = list(size = 25),
+          hjust = 0.3,
+          vjust = 1,
+          common.legend = FALSE,
+          align="h",
+          widths = c(1,2)
+          )
+
+AB
+
+CDE <- ggarrange(C+theme(legend.position = "none"),
+                D+theme(legend.position = "none")+ggtitle(""),
+                E+theme(legend.position = "none")+ggtitle(""),
+          nrow = 1,
+          labels = c("C","D","E"),
+          font.label = list(size = 25),
+          hjust = 0.3,
+          vjust = 1,
+          align="h",
+          widths = c(0.45,1.1,1.8)
+          )
+
+legend <- get_legend(D+theme(legend.position = "bottom"))
+
+FGH <- ggarrange(F+theme(legend.position = "none"),
+                G+theme(legend.position = "none")+ggtitle(""),
+                H+theme(legend.position = "none")+ggtitle(""),
+          nrow = 1,
+          labels = c("F","G","H"),
+          font.label = list(size = 25),
+          hjust = 0.3,
+          vjust = 1,
+          align="h",
+          widths = c(0.45,1.1,1.85)
+          )
+
+
+ggarrange(AB+ggtitle("Milk metabolites")+theme(plot.title = element_text(hjust = 0.5)),
+          CDE+ggtitle("Milk bacteria")+theme(plot.title = element_text(hjust = 0.5)),
+          FGH+ggtitle("Infant faecal bacteria")+theme(plot.title = element_text(hjust = 0.5)),
+          legend,
+          nrow = 4,
+          heights = c(1,1.2,1.2,0.2)
+          ) +
+  theme(plot.margin = unit(c(0,0,0,0.5), "cm"))
+
+ggsave("Figures/Figure 3.tiff", compression = "lzw",width = 25, height = 30, units = "cm", dpi = 400) 
+
+ggsave("Figures/Figure 3.png", width = 25, height = 30, units = "cm", dpi = 400) 
+
+ggsave("Figures/Figure 3.pdf",width = 25, height = 30, units = "cm", dpi = 400)
+```
+
+```{r, eval = F}
+#Old version
+
+A <- readRDS(here::here("results", "RData","2.1_Milk_and_faecal_characterization","alpha.shannon.milk.bmi.Rds"))
+
+B <- readRDS(here::here("results", "RData","2.1_Milk_and_faecal_characterization","beta.milk.BMI.Rds"))
+
+C <- readRDS(here::here("results", "RData","2.1_Milk_and_faecal_characterization","rabu.milk.BMI.Rds"))
+
+D <- readRDS(here::here("results", "RData","2.1_Milk_and_faecal_characterization","alpha.shannon.faec.bmi.Rds"))
+
+E <- readRDS(here::here("results", "RData","2.1_Milk_and_faecal_characterization","beta.faec.BMI.Rds"))
+
+F <- readRDS(here::here("results", "RData","2.1_Milk_and_faecal_characterization","rabu.faec.BMI.Rds"))
+
+G <- readRDS(here::here("results", "RData", "4.1_Metabolome_milk", "metab.pca.milk.bmi.Rds"))
+
+H <- readRDS(here::here("results", "RData", "4.1_Metabolome_milk", "rabu.metab.milk.bmi.Rds"))
+
+
+
+
+AB <- ggarrange(A+theme(legend.position = "none"),
+                B+theme(legend.position = "none"),
+          nrow = 1,
+          labels = c("C","D"),
+          font.label = list(size = 25),
+          hjust = 0.3,
+          vjust = 1,
+          common.legend = FALSE,
+          align="h",
+          widths = c(1,2)
+          )
+
+DE <- ggarrange(D+theme(legend.position = "none"),
+                E+theme(legend.position = "none"),
+          nrow = 1,
+          labels = c("F","G"),
+          font.label = list(size = 25),
+          hjust = 0.3,
+          vjust = 1,
+          align="h",
+          widths = c(1,2)
+          )
+
+ADBE <- ggarrange(AB,DE,
+                 nrow=2,
+                 common.legend = TRUE)
+
+CF <- ggarrange(C+theme(legend.position = "none"),
+                F+theme(legend.position = "none"),
+          nrow = 2,
+          labels = c("E","H"),
+          font.label = list(size = 25),
+          hjust = 0.3,
+          vjust = 1,
+          align="v"
+          #widths = c(1,2)
+          )
+
+legend <- get_legend(C+theme(legend.position = "bottom"))
+
+ADBECF <- ggarrange(ADBE,CF,
+                 nrow=1,
+                 widths = c(1.2,1),
+                 #labels = c("","G"),
+          #font.label = list(size = 25),
+          hjust = 0.3,
+          vjust = 1,
+          common.legend = TRUE,
+          legend="bottom"
+          )
+
+GH <- ggarrange(G+ggtitle("")+theme(legend.position = "none"),
+                H+ggtitle("")+theme(legend.position = "none"),
+          nrow = 1,
+          labels = c("A","B"),
+          font.label = list(size = 25),
+          hjust = 0.3,
+          vjust = 1,
+          widths = c(1,2)
+          #common.legend = TRUE,
+          #legend="bottom"
+          )
+
+
+ggarrange(GH+ggtitle("Milk metabolites")+theme(plot.title = element_text(hjust = 0.5)),
+          ADBECF,legend,
+          nrow = 3,
+          labels = c("",""),
+          font.label = list(size = 25),
+          hjust = 0.3,
+          vjust = 1,
+          widths = c(1,1.5),
+          heights = c(1,2,0.05)
+          ) +
+  theme(plot.margin = unit(c(0,0,0,0.5), "cm"))
+
+ggsave("Figures/Figure 3.tiff", compression = "lzw",width = 25, height = 30, units = "cm", dpi = 400) 
+
+ggsave("Figures/Figure 3.pdf",width = 25, height = 30, units = "cm", dpi = 400)
+
+AB <- ggarrange(G+ggtitle("")+theme(legend.position = "none"),
+                H+ggtitle("")+theme(legend.position = "none"),
+          nrow = 1,
+          labels = c("A","B"),
+          font.label = list(size = 25),
+          hjust = 0.3,
+          vjust = 1,
+          widths = c(1,2)
+          #common.legend = TRUE,
+          #legend="bottom"
+          )
+```
+
+# Figure 4 - effect size + RDA plots
+
+```{r}
+A <- readRDS(here::here("results", "RData","5.1_Metabolome_microbiome_relations","esize.bac.metab.Rds"))
+
+B <- readRDS(here::here("results", "RData","4.1_Metabolome_milk","rda.plot.metab.Rds"))
+  
+D <- readRDS(here::here("results", "RData","2.1_Milk_and_faecal_characterization","rda.plot.milk.Rds"))
+
+F <- readRDS(here::here("results", "RData","2.1_Milk_and_faecal_characterization","rda.plot.faec.Rds"))
+
+AB <- ggarrange(A[[1]]+ggtitle("")+theme(plot.margin = unit(c(-0.5,0,0,0), "cm")),B+theme(legend.position = "none"),
+          nrow = 1,
+          labels = c("A","B"),
+          font.label = list(size = 25),
+          hjust = 0.3,
+          vjust = 1,
+          widths = c(1,1.4)
+          ) %>%
+  annotate_figure(top = text_grob("Milk metabolites", 
+                                                   color = "black", 
+                                                   #face = "bold", 
+                                                   size = 14))
+
+CD <- ggarrange(A[[2]]+ggtitle("")+theme(plot.margin = unit(c(-0.5,0,0,0), "cm")),D+theme(legend.position = "none"),
+          nrow = 1,
+          labels = c("C","D"),
+          font.label = list(size = 25),
+          hjust = 0.3,
+          vjust = 1,
+          widths = c(1,1.4)
+          ) %>%
+  annotate_figure(top = text_grob("Milk bacteria", 
+                                                   color = "black", 
+                                                   #face = "bold", 
+                                                   size = 14))
+
+
+EF <- ggarrange(A[[3]]+
+                  ggtitle(""+theme(plot.margin = unit(c(-0.5,0,0,0), "cm")))+
+                  theme(legend.position = "bottom",
+                        legend.justification = "left",
+                        legend.title = element_blank(),
+                        legend.box.margin = unit(c(0,0,0,-2.5), "cm"))+
+                  guides(fill = guide_legend(nrow = 2, byrow = TRUE)),
+                F+theme(legend.position = "bottom")+theme(plot.margin = unit(c(0.2,0.2,1,0), "cm")),
+          nrow = 1,
+          labels = c("E","F"),
+          font.label = list(size = 25),
+          hjust = 0.3,
+          vjust = 1,
+          widths = c(1,1.4),
+          align="h"
+          # common.legend = TRUE,
+          # legend = "bottom"
+          )%>%
+  annotate_figure(top = text_grob("Infant faecal bacteria", 
+                                                   color = "black", 
+                                                   #face = "bold", 
+                                                   size = 14))
+
+
+ggarrange(AB,
+          CD,
+          EF+ggtitle("")+theme(plot.margin = unit(c(0.5,0,0,0), "cm")),
+          nrow = 3,
+          labels = c("",""),
+          font.label = list(size = 25),
+          hjust = 0.3,
+          vjust = 1,
+          heights = c(1,1,1.4),
+          align="v"
+          ) +
+  theme(plot.margin = unit(c(0,0,0,0.5), "cm")) 
+
+ggsave("Figures/Figure 4.tiff", compression = "lzw",width = 25, height = 33, units = "cm", dpi = 400) 
+
+ggsave("Figures/Figure 4.pdf",width = 25, height = 33, units = "cm", dpi = 400)
+```
+
+# Figure 5 - age propensity 
+
+```{r,eval=FALSE}
+A <- readRDS(here::here("results", "RData","5.1_Metabolome_microbiome_relations","age.propensity.cor.Rds"))
+
+B <- readRDS(here::here("results","RData","5.1_Metabolome_microbiome_relations","age.propensity.cor.days.Rds"))
+
+C <- readRDS(here::here("results","RData","5.1_Metabolome_microbiome_relations","age.prop.z.Rds"))
+# C <- readRDS(here::here("results", "RData","2.1_Milk_and_faecal_characterization","rda.plot.milk.Rds"))
+#   
+# D <- readRDS(here::here("results", "RData","2.1_Milk_and_faecal_characterization","rda.plot.faec.Rds"))
+
+# BCD <- ggarrange(B + ggtitle("Milk metabolites"),
+#                  C + ggtitle("Milk bacteria"),
+#                  D + ggtitle("Faecal bacteria")+theme(plot.margin = unit(c(0,0,0,0.2), "cm")),
+#           nrow = 1,
+#           labels = c("",""),
+#           font.label = list(size = 25),
+#           hjust = 0.3
+#           vjust = 1,
+#           common.legend = TRUE
+#           )
+
+ggarrange(A+theme(plot.margin = unit(c(0,0,0,0.5), "cm")),
+          B+theme(plot.margin = unit(c(0,0,0,0.5), "cm")),
+          C$gtable,
+          nrow = 3,
+          labels = c("","","G"),
+          font.label = list(size = 25),
+          hjust = 0.3,
+          vjust = 1,
+          heights = c(1,1.1,1.5)
+          ) +
+  theme(plot.margin = unit(c(0,0,0,0.5), "cm")) 
+
+ggsave("Figures/Figure 5.tiff", compression = "lzw",width = 25, height = 25, units = "cm", dpi = 400) 
+
+ggsave("Figures/Figure 5.pdf",width = 25, height = 25, units = "cm", dpi = 400)
+
+ggarrange(A+theme(plot.margin = unit(c(0,0,0,0.5), "cm")),
+          B+theme(plot.margin = unit(c(0,0,0,0.5), "cm")),
+          nrow = 2,
+          common.legend = TRUE)
+```
+
+# Figure 6 - RCCA cross-corralations
+
+```{r}
+library(ggplotify)
+library(patchwork)
+
+A <- readRDS(here::here("results", "RData","5.3_Metabolome_microbiome_correlations","pheat.milkmet.milkbac.2.Rds"))
+
+B <- readRDS(here::here("results", "RData","5.3_Metabolome_microbiome_correlations","pheat.milkmet.faecbac.225.Rds"))
+
+C <- readRDS(here::here("results", "RData","5.3_Metabolome_microbiome_correlations","pheat.milkmet.faecbifido.175.Rds"))
+
+#overall
+
+p3 <- gridExtra::grid.arrange(A$gtable,
+                        B$gtable,
+                        C$gtable,
+                        heights = c(1,1,0.9),
+                        vp=viewport(width=0.95, height=1)
+                        )
+
+grid.text("A", x = unit(0.05, "npc") - unit(1, "lines"), y = unit(0.99, "npc"), just = c("left", "top"),gp=gpar(fontsize=30))
+grid.text("B", x = unit(0.05, "npc") - unit(1, "lines"), y = unit(0.65, "npc"), just = c("left", "top"),gp=gpar(fontsize=30))
+grid.text("C", x = unit(0.05, "npc") - unit(1, "lines"), y = unit(0.32, "npc"), just = c("left", "top"),gp=gpar(fontsize=30))
+
+
+#save("Figures/Figure 5.tiff", compression = "lzw",width = 30, height = 45, units = "cm", dpi = 400)
+
+ggsave("Figures/Figure 6.tiff", compression = "lzw", p3,width = 30, height = 40, units = "cm", dpi = 400) 
+
+ggsave("Figures/Figure 6.pdf", p3, width = 30, height = 40, units = "cm", dpi = 400)
+
+```
+
+# Figure 6
+
+```{r}
+library(ggplotify)
+library(patchwork)
+
+#Bifido plots
+
+p2 <- gridExtra::grid.arrange(A$gtable,
+                        C$gtable, vp=viewport(width=0.95, height=1))
+
+
+ggsave("Figures/RCCA_bifido.tiff", compression = "lzw",p2, width = 30, height = 30, units = "cm", dpi = 400) 
+
+ggsave("Figures/RCCA_bifido.pdf",p2,width = 30, height = 30, units = "cm", dpi = 400)
+
+```
+
+```{r,eval=FALSE}
+A <- readRDS(here::here("results", "RData","5.1_Metabolome_microbiome_relations","esize.bac.metab.Rds"))
+
+
+
+ggarrange(A[[1]]+theme(legend.position = "none"),
+          A[[2]]+theme(legend.position = "none"),
+          A[[3]]+theme(legend.position = "right"),
+          nrow = 1,
+          font.label = list(size = 25),
+          hjust = 0.3,
+          vjust = 1,
+          widths = c(1,1,1.5)
+          )
+```
+
+
+# Session info
+
+```{r}
+sessionInfo()
+```

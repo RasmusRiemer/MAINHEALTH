@@ -1,0 +1,1231 @@
+---
+title: "2.2_Milk_MicroEco"
+author: "Rasmus Riemer Jakobsen"
+date: "`r Sys.time()`"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+link-citations: yes
+---
+
+```{r setup, include=F, message=F, warning=F}
+#Set working directory to script directory 
+
+subdir_name <- "2.2_Milk_MicroEco"
+
+#Load packages
+source("Supplementary_scripts/package_load_install.R")
+#Load utility functions
+source("Supplementary_scripts/utils.R")
+
+dir.create("results", showWarnings = FALSE, recursive = TRUE)
+
+#source("Supplementary_scripts/create_stability.R")
+
+#source("Phyloseq_import_CSS_16S_laca.R")
+load("0.3_deduplicated_and_decontaminated.RData")
+
+
+theme_set(theme_classic())
+
+knitr::opts_chunk$set(fig.width=12, fig.height=8, fig.fullwidth = TRUE)
+```
+
+```{r}
+source(here::here("Supplementary_scripts","package_load_install.R")) 
+source(here::here("Supplementary_scripts","utils.R")) # please see the src-folder for some custom functions used in 
+#source(here::here("src", "run_clusterprofiler.R"))
+```
+
+```{r knit, echo=F, eval=FALSE}
+rmarkdown::render(
+  input = here::here(str_c(subdir_name, ".Rmd")),
+  output_dir = here::here("results", "reports")
+)
+```
+
+# Convert to microeco object
+
+```{r}
+meco_dat <- phyloseq2meco(PSB)
+#meco_dat
+
+#Subset milk samples
+meco_milk <- clone(meco_dat)
+meco_milk$sample_table <- subset(meco_dat$sample_table, Sample.type == "Milk")
+
+meco_milk$tidy_dataset()
+
+#Tidy up taxonomy
+meco_milk$tax_table <- tidy_taxonomy(meco_milk$tax_table)
+
+#Calculate relative abundences
+meco_milk$cal_abund()
+
+#Set days as factor
+meco_milk$sample_table$Days <- as.factor(meco_milk$sample_table$Days)
+
+#Calculta beta diversity metrics
+meco_milk$cal_betadiv(unifrac = TRUE)
+```
+
+# Apha div
+
+## Time
+
+```{r}
+t1 <- trans_alpha$new(dataset = meco_milk, group = "Days")
+# return t1$data_stat
+head(t1$data_stat)
+
+
+```
+
+```{r}
+ggarrange(t1$plot_alpha(measure = "Shannon", shape = "Days", boxplot_add = "jitter"),
+t1$plot_alpha(measure = "Chao1", shape = "Days", boxplot_add = "jitter")
+)
+```
+
+## BMI
+
+```{r}
+t1 <- trans_alpha$new(dataset = meco_milk, group = "BMI.group")
+# return t1$data_stat
+head(t1$data_stat)
+```
+
+```{r}
+ggarrange(t1$plot_alpha(measure = "Shannon", shape = "BMI.group", boxplot_add = "jitter"),
+t1$plot_alpha(measure = "Chao1", shape = "BMI.group", boxplot_add = "jitter")
+)
+```
+
+# Beta diversity
+
+## Time
+
+```{r}
+variable = "Days"
+
+# create an trans_beta object
+# measure parameter must be one of names(dataset$beta_diversity)
+t1 <- trans_beta$new(dataset = meco_milk, group = variable, measure = "bray")
+
+#PCoA, PCA and NMDS are available
+t1$cal_ordination(ordination = "PCoA")
+
+# t1$res_ordination is the ordination result list
+#class(t1$res_ordination)
+
+# plot the PCoA result with confidence ellipse
+t1$plot_ordination(plot_color = variable, plot_shape = variable, plot_type = c("point", "ellipse"))
+```
+
+#### Permanova
+
+```{r}
+t1$cal_manova(manova_all = FALSE)
+t1$res_manova
+```
+
+### Within-group distances
+
+```{r}
+# calculate and plot sample distances within groups
+t1$cal_group_distance(within_group = TRUE)
+# return t1$res_group_distance
+# perform Wilcoxon Rank Sum and Signed Rank Tests
+t1$cal_group_distance_diff(method = "wilcox")
+# plot_group_order parameter can be used to adjust orders in x axis
+t1$plot_group_distance(boxplot_add = "mean")
+```
+
+#### Dispersion
+
+```{r}
+# for the whole comparison and for each paired groups
+t1$cal_betadisper()
+## The result is stored in object$res_betadisper ...
+t1$res_betadisper
+```
+
+### Clustering
+
+```{r}
+# use replace_name to set the label name, group parameter used to set the color
+t1$plot_clustering(group = "Days", replace_name = c("Days"))
+```
+
+## BMI groups
+
+```{r}
+variable = "BMI.group"
+# create an trans_beta object
+# measure parameter must be one of names(dataset$beta_diversity)
+t1 <- trans_beta$new(dataset = meco_milk, group = variable, measure = "bray")
+
+#PCoA, PCA and NMDS are available
+t1$cal_ordination(ordination = "PCoA")
+
+# t1$res_ordination is the ordination result list
+#class(t1$res_ordination)
+
+# plot the PCoA result with confidence ellipse
+t1$plot_ordination(plot_color = variable, plot_shape = variable, plot_type = c("point", "ellipse"))
+```
+
+### Between-group distances
+
+
+### Within-group distances
+
+```{r}
+# calculate and plot sample distances within groups
+t1$cal_group_distance(within_group = TRUE)
+# return t1$res_group_distance
+# perform Wilcoxon Rank Sum and Signed Rank Tests
+t1$cal_group_distance_diff(method = "wilcox")
+# plot_group_order parameter can be used to adjust orders in x axis
+t1$plot_group_distance(boxplot_add = "mean")
+```
+
+#### Permanova
+
+```{r}
+t1$cal_manova(manova_all = FALSE)
+t1$res_manova
+```
+
+#### Dispersion
+
+```{r}
+# for the whole comparison and for each paired groups
+t1$cal_betadisper()
+## The result is stored in object$res_betadisper ...
+t1$res_betadisper
+```
+
+### Clustering
+
+```{r}
+# use replace_name to set the label name, group parameter used to set the color
+t1$plot_clustering(group = "BMI.group", replace_name = c("BMI.group"))
+```
+
+# Complex models
+
+## Days
+
+### Diferential abundance - Random Forest
+
+#### All time points
+
+```{r}
+variable = "Days"
+
+t1 <- trans_diff$new(dataset = meco_milk, method = "rf", group = variable, p_adjust_method = "fdr", taxa_level = "all")
+# see t1$res_diff for the result
+t1$res_diff[1:5, c(1, 3, 4, 6)]
+
+g1 <- t1$plot_diff_bar(use_number = 1:16)
+
+# plot the abundance of taxe displayed in in g1
+g2 <- t1$plot_diff_abund(select_taxa = t1$plot_diff_bar_taxa, add_sig = T, add_sig_label = "Significance")
+# now the y axis in g1 and g2 is same, so we can merge them
+# remove g1 legend; remove g2 y axis text and ticks
+g1 <- g1 + theme(legend.position = "none", axis.title.x = element_text(size = 12))
+g2 <- g2 + theme(axis.text.y = element_blank(), axis.ticks.y = element_blank(), axis.title.x = element_text(size = 12))
+gridExtra::grid.arrange(g1, g2, ncol = 2, nrow = 1, widths = c(2, 1.7))
+
+```
+
+##### Cladeogram
+
+```{r, warning = F}
+t1$plot_diff_cladogram(use_taxa_num = 200, use_feature_num = 30, clade_label_level = 5)
+```
+
+#### Day 3 vs 90 (day 30+60 excluded)
+
+```{r}
+variable = "Days"
+
+meco_milk_sub <- clone(meco_milk)
+meco_milk_sub$sample_table <- subset(meco_milk_sub$sample_table, Days %in% c("3","90"))
+meco_milk_sub$tidy_dataset()
+
+t1 <- trans_diff$new(dataset = meco_milk_sub, method = "rf", group = variable, p_adjust_method = "fdr", taxa_level = "all")
+# see t1$res_diff for the result
+t1$res_diff[1:5, c(1, 3, 4, 6)]
+
+g1 <- t1$plot_diff_bar(use_number = 1:20)
+
+# plot the abundance of taxe displayed in in g1
+g2 <- t1$plot_diff_abund(select_taxa = t1$plot_diff_bar_taxa, add_sig = T, add_sig_label = "Significance")
+# now the y axis in g1 and g2 is same, so we can merge them
+# remove g1 legend; remove g2 y axis text and ticks
+g1 <- g1 + theme(legend.position = "none")
+g2 <- g2 + theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
+gridExtra::grid.arrange(g1, g2, ncol = 2, nrow = 1, widths = c(2, 1.7))
+```
+
+##### Cladeogram
+
+```{r, warning = F}
+t1$plot_diff_cladogram(use_taxa_num = 200, use_feature_num = 50, clade_label_level = 5)
+```
+
+### Diferential abundance -lefse
+
+#### All time points
+
+```{r}
+variable = "Days"
+
+t1_diff_lefse <- trans_diff$new(dataset = meco_milk, method = "lefse", group = variable, p_adjust_method = "fdr", taxa_level = "all")
+# see t1$res_diff for the result
+t1_diff_lefse$res_diff[1:5, c(1, 3, 4, 6)]
+
+g1 <- t1_diff_lefse$plot_diff_bar(use_number = 1:16)
+
+# plot the abundance of taxe displayed in in g1
+g2 <- t1$plot_diff_abund(select_taxa = t1$plot_diff_bar_taxa, add_sig = T, add_sig_label = "Significance")
+# now the y axis in g1 and g2 is same, so we can merge them
+# remove g1 legend; remove g2 y axis text and ticks
+g1 <- g1 + theme(legend.position = "none")
+g2 <- g2 + theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
+gridExtra::grid.arrange(g1, g2, ncol = 2, nrow = 1, widths = c(2, 1.7))
+```
+
+##### Cladeogram
+
+```{r, warning = F}
+t1_diff_lefse$plot_diff_cladogram(use_taxa_num = 200, use_feature_num = 30, clade_label_level = 5)
+```
+
+### Diferential abundance - LinDA
+
+#### All time points
+
+```{r}
+variable = "Days"
+
+t1 <- trans_diff$new(dataset = meco_milk, method = "linda", group = variable, p_adjust_method = "fdr", taxa_level = "Genus")
+# see t1$res_diff for the result
+t1$res_diff[1:5, c(1, 3, 4, 6)]
+
+g1 <- t1$plot_diff_bar(use_number = 1:20)
+
+# plot the abundance of taxe displayed in in g1
+g2 <- t1$plot_diff_abund(select_taxa = t1$plot_diff_bar_taxa, add_sig = T, add_sig_label = "Significance")
+# now the y axis in g1 and g2 is same, so we can merge them
+# remove g1 legend; remove g2 y axis text and ticks
+g1 <- g1 + theme(legend.position = "none")
+g2 <- g2 + theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
+gridExtra::grid.arrange(g1, g2, ncol = 2, nrow = 1, widths = c(2, 1.7))
+```
+
+##### Cladeogram
+
+Only for RF or lefSE currently
+
+```{r, warning = F}
+#t1$plot_diff_cladogram(use_taxa_num = 200, use_feature_num = 50, clade_label_level = 5)
+```
+
+#### Day 3 vs 90 (day 30+60 excluded)
+
+```{r}
+variable = "Days"
+
+meco_milk_sub <- clone(meco_milk)
+meco_milk_sub$sample_table <- subset(meco_milk_sub$sample_table, Days %in% c("3","90"))
+meco_milk_sub$tidy_dataset()
+
+t1 <- trans_diff$new(dataset = meco_milk_sub, method = "linda", group = variable, p_adjust_method = "fdr", taxa_level = "Genus")
+# see t1$res_diff for the result
+t1$res_diff[1:5, c(1, 3, 4, 6)]
+
+g1 <- t1$plot_diff_bar(use_number = 1:15)
+
+# plot the abundance of taxe displayed in in g1
+g2 <- t1$plot_diff_abund(select_taxa = t1$plot_diff_bar_taxa, add_sig = T, add_sig_label = "Significance")
+# now the y axis in g1 and g2 is same, so we can merge them
+# remove g1 legend; remove g2 y axis text and ticks
+g1 <- g1 + theme(legend.position = "none")
+g2 <- g2 + theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
+gridExtra::grid.arrange(g1, g2, ncol = 2, nrow = 1, widths = c(2, 1.7))
+```
+
+##### Cladeogram
+
+Only for RF or lefSE currently
+
+```{r, warning = F}
+#t1$plot_diff_cladogram(use_taxa_num = 200, use_feature_num = 50, clade_label_level = 5)
+```
+
+## BMI
+
+### Diferential abundance - Random Forest
+
+#### All time points
+
+```{r}
+variable = "BMI.group"
+
+t1 <- trans_diff$new(dataset = meco_milk, method = "rf", group = variable, p_adjust_method = "fdr", taxa_level = "all")
+# see t1$res_diff for the result
+t1$res_diff[1:5, c(1, 3, 4, 6)]
+
+g1 <- t1$plot_diff_bar(use_number = 1:20)
+
+# plot the abundance of taxe displayed in in g1
+g2 <- t1$plot_diff_abund(select_taxa = t1$plot_diff_bar_taxa, add_sig = T, add_sig_label = "Significance")
+# now the y axis in g1 and g2 is same, so we can merge them
+# remove g1 legend; remove g2 y axis text and ticks
+g1 <- g1 + theme(legend.position = "none")
+g2 <- g2 + theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
+gridExtra::grid.arrange(g1, g2, ncol = 2, nrow = 1, widths = c(2, 1.7))
+```
+
+##### Cladeogram
+
+```{r, warning = F}
+t1$plot_diff_cladogram(use_taxa_num = 200, use_feature_num = 30, clade_label_level = 5)
+```
+
+#### Day 30-90 (day 3 excluded)
+
+```{r}
+meco_milk_sub <- clone(meco_milk)
+meco_milk_sub$sample_table <- subset(meco_milk_sub$sample_table, Days %in% c("30","60","90"))
+meco_milk_sub$tidy_dataset()
+
+t1 <- trans_diff$new(dataset = meco_milk_sub, method = "rf", group = variable, p_adjust_method = "fdr", taxa_level = "all")
+# see t1$res_diff for the result
+t1$res_diff[1:5, c(1, 3, 4, 6)]
+
+g1 <- t1$plot_diff_bar(use_number = 1:20)
+
+# plot the abundance of taxe displayed in in g1
+g2 <- t1$plot_diff_abund(select_taxa = t1$plot_diff_bar_taxa, add_sig = T, add_sig_label = "Significance")
+# now the y axis in g1 and g2 is same, so we can merge them
+# remove g1 legend; remove g2 y axis text and ticks
+g1 <- g1 + theme(legend.position = "none")
+g2 <- g2 + theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
+gridExtra::grid.arrange(g1, g2, ncol = 2, nrow = 1, widths = c(2, 1.7))
+```
+
+##### Cladeogram
+
+```{r, warning = F}
+t1$plot_diff_cladogram(use_taxa_num = 200, use_feature_num = 50, clade_label_level = 5)
+```
+
+### Diferential abundance - LinDA
+
+#### All time points
+
+```{r}
+t1 <- trans_diff$new(dataset = meco_milk, method = "linda", group = variable, p_adjust_method = "none", taxa_level = "Genus")
+# see t1$res_diff for the result
+t1$res_diff[1:5, c(1, 3, 4, 6)]
+
+g1 <- t1$plot_diff_bar(use_number = 1:20)
+
+# plot the abundance of taxe displayed in in g1
+g2 <- t1$plot_diff_abund(select_taxa = t1$plot_diff_bar_taxa, add_sig = T, add_sig_label = "Significance")
+# now the y axis in g1 and g2 is same, so we can merge them
+# remove g1 legend; remove g2 y axis text and ticks
+g1 <- g1 + theme(legend.position = "none")
+g2 <- g2 + theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
+gridExtra::grid.arrange(g1, g2, ncol = 2, nrow = 1, widths = c(2, 1.7))
+```
+
+##### Cladeogram
+
+Only for RF or lefSE currently
+
+```{r, warning = F}
+#t1$plot_diff_cladogram(use_taxa_num = 200, use_feature_num = 50, clade_label_level = 5)
+```
+
+#### Day 3 vs 90 (day 30+60 excluded)
+
+```{r}
+
+meco_milk_sub <- clone(meco_milk)
+meco_milk_sub$sample_table <- subset(meco_milk_sub$sample_table, Days %in% c("30","60","90"))
+meco_milk_sub$tidy_dataset()
+
+t1 <- trans_diff$new(dataset = meco_milk_sub, method = "linda", group = variable, p_adjust_method = "fdr", taxa_level = "Genus")
+# see t1$res_diff for the result
+t1$res_diff[1:5, c(1, 3, 4, 6)]
+
+g1 <- t1$plot_diff_bar(use_number = 1:15)
+
+# plot the abundance of taxe displayed in in g1
+g2 <- t1$plot_diff_abund(select_taxa = t1$plot_diff_bar_taxa, add_sig = T, add_sig_label = "Significance")
+# now the y axis in g1 and g2 is same, so we can merge them
+# remove g1 legend; remove g2 y axis text and ticks
+g1 <- g1 + theme(legend.position = "none")
+g2 <- g2 + theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
+gridExtra::grid.arrange(g1, g2, ncol = 2, nrow = 1, widths = c(2, 1.7))
+```
+
+##### Cladeogram
+
+Only for RF or lefSE currently
+
+```{r, warning = F}
+#t1$plot_diff_cladogram(use_taxa_num = 200, use_feature_num = 50, clade_label_level = 5)
+```
+
+## Maternal antibiotics
+
+### Diferential abundance - Random Forest
+
+#### All time points
+
+```{r}
+variable = "AB.mother.since_birth"
+
+meco_milk_sub <- clone(meco_milk)
+meco_milk_sub$sample_table <- subset(meco_milk_sub$sample_table, !is.na(AB.mother.since_birth))
+meco_milk_sub$tidy_dataset()
+
+t1 <- trans_diff$new(dataset = meco_milk_sub, method = "rf", group = variable, p_adjust_method = "none", taxa_level = "all")
+# see t1$res_diff for the result
+t1$res_diff[1:5, c(1, 3, 4, 6)]
+
+g1 <- t1$plot_diff_bar(use_number = 1:20)
+
+# plot the abundance of taxe displayed in in g1
+g2 <- t1$plot_diff_abund(select_taxa = t1$plot_diff_bar_taxa, add_sig = T, add_sig_label = "Significance")
+# now the y axis in g1 and g2 is same, so we can merge them
+# remove g1 legend; remove g2 y axis text and ticks
+g1 <- g1 + theme(legend.position = "none")
+g2 <- g2 + theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
+gridExtra::grid.arrange(g1, g2, ncol = 2, nrow = 1, widths = c(2, 1.7))
+```
+
+###### Cladeogram
+
+```{r, warning = F}
+t1$plot_diff_cladogram(use_taxa_num = 200, use_feature_num = 30, clade_label_level = 5)
+```
+
+#### Day 30-90 (day 3 excluded)
+
+```{r}
+meco_milk_sub <- clone(meco_milk)
+meco_milk_sub$sample_table <- subset(meco_milk_sub$sample_table, Days %in% c("30","60","90") & !is.na(AB.mother.since_birth))
+meco_milk_sub$tidy_dataset()
+
+t1 <- trans_diff$new(dataset = meco_milk_sub, method = "rf", group = variable, p_adjust_method = "none", taxa_level = "all")
+# see t1$res_diff for the result
+t1$res_diff[1:5, c(1, 3, 4, 6)]
+
+g1 <- t1$plot_diff_bar(use_number = 1:20)
+
+# plot the abundance of taxe displayed in in g1
+g2 <- t1$plot_diff_abund(select_taxa = t1$plot_diff_bar_taxa, add_sig = T, add_sig_label = "Significance")
+# now the y axis in g1 and g2 is same, so we can merge them
+# remove g1 legend; remove g2 y axis text and ticks
+g1 <- g1 + theme(legend.position = "none")
+g2 <- g2 + theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
+gridExtra::grid.arrange(g1, g2, ncol = 2, nrow = 1, widths = c(2, 1.7))
+```
+
+##### Cladeogram
+
+```{r, warning = F}
+t1$plot_diff_cladogram(use_taxa_num = 200, use_feature_num = 50, clade_label_level = 5)
+```
+
+### Diferential abundance - LinDA
+
+#### All time points
+
+```{r, eval = F}
+meco_milk_sub <- clone(meco_milk)
+meco_milk_sub$sample_table <- subset(meco_milk_sub$sample_table, !is.na(AB.mother.since_birth))
+meco_milk_sub$tidy_dataset()
+
+t1 <- trans_diff$new(dataset = meco_milk_sub, method = "linda", group = variable, p_adjust_method = "none", taxa_level = "Genus")
+# see t1$res_diff for the result
+t1$res_diff[1:5, c(1, 3, 4, 6)]
+
+g1 <- t1$plot_diff_bar(use_number = 1:20)
+
+# plot the abundance of taxe displayed in in g1
+g2 <- t1$plot_diff_abund(select_taxa = t1$plot_diff_bar_taxa, add_sig = T, add_sig_label = "Significance")
+# now the y axis in g1 and g2 is same, so we can merge them
+# remove g1 legend; remove g2 y axis text and ticks
+g1 <- g1 + theme(legend.position = "none")
+g2 <- g2 + theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
+gridExtra::grid.arrange(g1, g2, ncol = 2, nrow = 1, widths = c(2, 1.7))
+```
+
+##### Cladeogram
+
+Only for RF or lefSE currently
+
+```{r, warning = F}
+#t1$plot_diff_cladogram(use_taxa_num = 200, use_feature_num = 50, clade_label_level = 5)
+```
+
+#### Day 3 vs 90 (day 30+60 excluded)
+
+```{r, eval = F}
+
+meco_milk_sub <- clone(meco_milk)
+meco_milk_sub$sample_table <- subset(meco_milk_sub$sample_table, Days %in% c("30","60","90"))
+meco_milk_sub$tidy_dataset()
+
+t1 <- trans_diff$new(dataset = meco_milk_sub, method = "linda", group = variable, p_adjust_method = "fdr", taxa_level = "Genus")
+# see t1$res_diff for the result
+t1$res_diff[1:5, c(1, 3, 4, 6)]
+
+g1 <- t1$plot_diff_bar(use_number = 1:15)
+
+# plot the abundance of taxe displayed in in g1
+g2 <- t1$plot_diff_abund(select_taxa = t1$plot_diff_bar_taxa, add_sig = T, add_sig_label = "Significance")
+# now the y axis in g1 and g2 is same, so we can merge them
+# remove g1 legend; remove g2 y axis text and ticks
+g1 <- g1 + theme(legend.position = "none")
+g2 <- g2 + theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())
+gridExtra::grid.arrange(g1, g2, ncol = 2, nrow = 1, widths = c(2, 1.7))
+```
+
+No significant taxa detected
+
+##### Cladeogram
+
+Only for RF or lefSE currently
+
+```{r, warning = F}
+#t1$plot_diff_cladogram(use_taxa_num = 200, use_feature_num = 50, clade_label_level = 5)
+```
+
+### BMI delta 3 months after
+
+### DNA concentration
+
+### Breast infection
+
+
+
+# Network - spearman
+
+## Calculate correlations
+
+```{r, warning = F}
+# require WGCNA package
+if(!require("WGCNA")) install.packages("WGCNA", repos = BiocManager::repositories())
+
+
+t1_spearm <- trans_network$new(dataset = meco_milk, cor_method = "spearman", use_WGCNA_pearson_spearman = TRUE, filter_thres = 0.0001)
+## construct network; require igraph package
+
+t1_spearm$cal_network(COR_p_thres = 0.01, COR_optimization = TRUE)
+
+```
+
+## Partition modules
+
+```{r, warning = F}
+# invoke igraph cluster_fast_greedy function for this undirected network 
+t1_spearm$cal_module(method = "cluster_fast_greedy")
+```
+
+## Aoutput gephi plot
+
+```{r, warning = F}
+# require rgexf package to be installed
+t1_spearm$save_network(filepath = "network.gexf")
+```
+
+## Plot node classification
+
+### within-module connectivity and among-module connectivity
+
+```{r, warning = F}
+# add_label = TRUE can be used to directly add text label for points
+t1_spearm$plot_taxa_roles(use_type = 1)
+```
+
+### Node roles
+
+```{r, warning = F}
+t1_spearm$plot_taxa_roles(use_type = 2)
+```
+
+## Eigene analysis of modules
+
+The eigengene of a module, i.e. the first principal component of PCA, represents the main variance of the abundance in the species of the module.
+
+```{r, warning = F}
+t1_spearm$cal_eigen()
+# return t1_spearm$res_eigen
+```
+
+Then we perform correlation heatmap to show the associations between eigengenes and environmental factors.
+
+```{r, warning = F, eval = F}
+# create trans_env object
+env <- select(meco_milk$sample_table,all_of(effect.size.variables)) %>%
+  select(where(is.numeric))
+  
+t2_spearm <- trans_env$new(dataset = meco_milk,
+                    add_data = env)
+
+# calculate correlations
+t2_spearm$cal_cor(add_abund_table = t1_spearm$res_eigen)
+# plot the correlation heatmap
+t2_spearm$plot_cor()
+```
+
+No correlations foud because only peripheral nodes were detected
+
+## Sum links between taxa
+
+The function cal_sum_links can sum the links (edge) number from one taxa to another or within the same taxa. The function plot_sum_links is used to show the result from the function cal_sum_links. This is very useful to fast see how many nodes are connected between different taxa or within one taxa. In terms of ‘Phylum’ level in the tutorial, the function cal_sum_links() sum the linkages number from one Phylum to another Phylum or the linkages in the same Phylum. So the numbers along the outside of the circular plot represent how many edges or linkages are related with the Phylum. For example, in terms of Proteobacteria, there are roughly total 900 edges associated with the OTUs in Proteobacteria, in which roughly 200 edges connect both OTUs in Proteobacteria and roughly 150 edges connect the OTUs from Proteobacteria with the OTUs from Chloroflexi.
+
+```{r, warning = F}
+t1_spearm$cal_sum_links(taxa_level = "Phylum")
+# require chorddiag package; see https://github.com/mattflor/chorddiag
+t1_spearm$plot_sum_links(plot_pos = TRUE, plot_num = 6, color_values = col_fil)
+```
+
+```{r, warning = F}
+t1_spearm$cal_sum_links(taxa_level = "Family")
+# require chorddiag package; see https://github.com/mattflor/chorddiag
+t1_spearm$plot_sum_links(plot_pos = TRUE, plot_num = 20, color_values = col_fil)
+```
+
+```{r, warning = F}
+
+```
+
+# Network - SPIEC-EASI - not run due to error
+
+## All time points
+
+SPIEC-EASI (SParse InversE Covariance Estimation for Ecological Association Inference) approach of SpiecEasi R package (Kurtz et al. 2015) has two network construction approaches based on graph model, which relies on algorithms for sparse neighborhood and inverse covariance selection. See https://github.com/zdk123/SpiecEasi for the package installation. It is very slow for SpiecEasi_method = ‘glasso’ when there is a large number (such as hundreds to thousands) according to our test experience.
+
+### Calculate correlations
+
+```{r, warning = F, eval = F}
+library(MatrixExtra)
+
+t1_spe <- trans_network$new(dataset = meco_milk, cor_method = NULL, taxa_level = "OTU", filter_thres = 0.001)
+
+
+# also see SpiecEasi::spiec.easi for available model parameters
+t1_spe$cal_network(network_method = "SpiecEasi", SpiecEasi_method = "mb")
+
+# see t1_spe$res_network
+
+t1_spe
+
+```
+
+### construct network; require igraph package
+
+```{r, warning = F, eval = F}
+# t1_spe$cal_network(COR_p_thres = 0.01, COR_optimization = TRUE)
+# use arbitrary coefficient threshold to contruct network
+# t1_spe$cal_network(COR_p_thres = 0.01, COR_cut = 0.7)
+# return t1_spe$res_network
+```
+
+### Partition modules
+
+```{r, warning = F, eval = F}
+# invoke igraph cluster_fast_greedy function for this undirected network 
+t1_spe$cal_module(method = "cluster_fast_greedy")
+```
+
+### Aoutput gephi plot
+
+```{r, warning = F, eval = F}
+# require rgexf package to be installed
+t1_spe$save_network(filepath = "network_speic-easy.gexf")
+```
+
+### Plot node classification
+
+#### within-module connectivity and among-module connectivity
+
+```{r, warning = F, eval = F}
+# add_label = TRUE can be used to directly add text label for points
+t1_spe$plot_taxa_roles(use_type = 1)
+```
+
+#### Node roles
+
+```{r, warning = F, eval = F}
+t1_spe$plot_taxa_roles(use_type = 2)
+```
+
+### Eigene analysis of modules
+
+The eigengene of a module, i.e. the first principal component of PCA, represents the main variance of the abundance in the species of the module.
+
+```{r, warning = F, eval = F}
+t1_spe$cal_eigen()
+# return t1_spe$res_eigen
+```
+
+Then we perform correlation heatmap to show the associations between eigengenes and environmental factors.
+
+```{r, warning = F, eval = T, eval = F}
+# create trans_env object
+env <- select(meco_milk$sample_table,all_of(effect.size.variables)) %>%
+  select(where(is.numeric))
+  
+t2_spe <- trans_env$new(dataset = meco_milk,
+                    add_data = env)
+
+# calculate correlations
+t2_spe$cal_cor(add_abund_table = t1_spe$res_eigen)
+# plot the correlation heatmap
+t2_spe$plot_cor()
+```
+
+No correlations foud because only peripheral nodes were detected
+
+## Sum links between taxa
+
+The function cal_sum_links can sum the links (edge) number from one taxa to another or within the same taxa. The function plot_sum_links is used to show the result from the function cal_sum_links. This is very useful to fast see how many nodes are connected between different taxa or within one taxa. In terms of ‘Phylum’ level in the tutorial, the function cal_sum_links() sum the linkages number from one Phylum to another Phylum or the linkages in the same Phylum. So the numbers along the outside of the circular plot represent how many edges or linkages are related with the Phylum. For example, in terms of Proteobacteria, there are roughly total 900 edges associated with the OTUs in Proteobacteria, in which roughly 200 edges connect both OTUs in Proteobacteria and roughly 150 edges connect the OTUs from Proteobacteria with the OTUs from Chloroflexi.
+
+### Phylum
+
+```{r, warning = F, eval = F}
+t1_spe$cal_sum_links(taxa_level = "Phylum")
+# require chorddiag package; see https://github.com/mattflor/chorddiag
+t1_spe$plot_sum_links(plot_pos = TRUE, plot_num = 10, color_values = RColorBrewer::brewer.pal(10, "Paired"))
+```
+
+### Genus
+
+```{r, warning = F, eval = F}
+t1_spe$cal_sum_links(taxa_level = "Genus")
+# require chorddiag package; see https://github.com/mattflor/chorddiag
+t1_spe$plot_sum_links(plot_pos = TRUE, plot_num = 10, color_values = RColorBrewer::brewer.pal(10, "Paired"))
+```
+
+# Network - BEEM-static
+
+The final method we want to show comes from beemStatic package (Li et al. 2021). This method can be applied to cross-sectional datasets to infer interaction network based on the generalized Lotka-Volterra model, which is typically used in the microbial time-series data. So the network from this approach is a directed network. Please see https://github.com/CSB5/BEEM-static for installing the R beemStatic package
+
+## Calculate correlations
+
+```{r, warning = F, eval = T}
+# t1_bee <- trans_network$new(dataset = meco_milk, cor_method = NULL, taxa_level = "OTU", filter_thres = 0.002)
+# t1_bee$cal_network(network_method = "beemStatic")
+
+#Only re-run if data has been updated
+sl(t1_bee,t1_bee)
+```
+
+## Partition modules
+
+```{r, warning = F}
+# use cluster_walktrap method for the directed network
+t1_bee$cal_module(method = "cluster_walktrap")
+```
+
+## Aoutput gephi plot
+
+```{r, warning = F}
+# require rgexf package to be installed
+t1_bee$save_network(filepath = "network_beem.gexf")
+```
+
+## Plot node classification
+
+### within-module connectivity and among-module connectivity
+
+```{r, warning = F}
+# add_label = TRUE can be used to directly add text label for points
+t1_bee$plot_taxa_roles(use_type = 1)
+```
+
+### Node roles
+
+```{r, warning = F}
+t1_bee$plot_taxa_roles(use_type = 2)
+```
+
+## Eigene analysis of modules
+
+The eigengene of a module, i.e. the first principal component of PCA, represents the main variance of the abundance in the species of the module.
+
+```{r, warning = F}
+t1_bee$cal_eigen()
+# return t1_bee$res_eigen
+```
+
+Then we perform correlation heatmap to show the associations between eigengenes and environmental factors.
+
+```{r, warning = F, eval = T}
+# create trans_env object
+env <- select(meco_milk$sample_table,all_of(effect.size.variables)) %>% 
+  select(-"Batch") %>%
+  select(where(is.numeric))
+  
+t2_bee <- trans_env$new(dataset = meco_milk,
+                    add_data = env)
+
+# calculate correlations
+t2_bee$cal_cor(add_abund_table = t1$res_eigen)
+# plot the correlation heatmap
+t2_bee$plot_cor()
+```
+
+No correlations foud because only peripheral nodes were detected
+
+## Sum links between taxa
+
+The function cal_sum_links can sum the links (edge) number from one taxa to another or within the same taxa. The function plot_sum_links is used to show the result from the function cal_sum_links. This is very useful to fast see how many nodes are connected between different taxa or within one taxa. In terms of ‘Phylum’ level in the tutorial, the function cal_sum_links() sum the linkages number from one Phylum to another Phylum or the linkages in the same Phylum. So the numbers along the outside of the circular plot represent how many edges or linkages are related with the Phylum. For example, in terms of Proteobacteria, there are roughly total 900 edges associated with the OTUs in Proteobacteria, in which roughly 200 edges connect both OTUs in Proteobacteria and roughly 150 edges connect the OTUs from Proteobacteria with the OTUs from Chloroflexi.
+
+### Phyla
+
+```{r, warning = F}
+t1_bee$cal_sum_links(taxa_level = "Phylum")
+# require chorddiag package; see https://github.com/mattflor/chorddiag
+t1_bee$plot_sum_links(plot_pos = TRUE, plot_num = 10, color_values = RColorBrewer::brewer.pal(10, "Paired"))
+```
+
+### Genera
+
+```{r, warning = F}
+t1_bee$cal_sum_links(taxa_level = "Genus")
+# require chorddiag package; see https://github.com/mattflor/chorddiag
+t1_bee$plot_sum_links(plot_pos = TRUE, plot_num = 10, color_values = RColorBrewer::brewer.pal(10, "Paired"))
+```
+
+# BEEM-static day 3 only
+
+```{r, warning = F, eval = T}
+#meco_milk_sub <- clone(meco_milk)
+#meco_milk_sub$sample_table <- subset(meco_milk_sub$sample_table, Days %in% c("3"))
+#meco_milk_sub$tidy_dataset()
+
+#t1_bee3 <- trans_network$new(dataset = meco_milk_sub, cor_method = NULL, taxa_level = "OTU", filter_thres = 0.004)
+
+#t1_bee3$cal_network(network_method = "beemStatic")
+
+sl(t1_bee3,t1_bee3)
+```
+
+### Phyla
+
+```{r, warning = F}
+#t1_bee3$cal_sum_links(taxa_level = "Phylum")
+# require chorddiag package; see https://github.com/mattflor/chorddiag
+#t1_bee3$plot_sum_links(plot_pos = TRUE, plot_num = 10, color_values = RColorBrewer::brewer.pal(10, "Paired"))
+```
+
+### Genera
+
+```{r, warning = F}
+t1_bee3$cal_sum_links(taxa_level = "Genus")
+# require chorddiag package; see https://github.com/mattflor/chorddiag
+t1_bee3$plot_sum_links(plot_pos = TRUE, plot_num = 10, color_values = RColorBrewer::brewer.pal(10, "Paired"))
+```
+
+# BEEM-static day 30-90
+
+```{r, warning = F, eval = T}
+#meco_milk_sub <- clone(meco_milk)
+#meco_milk_sub$sample_table <- subset(meco_milk_sub$sample_table, Days %in% c("30","60","90"))
+#meco_milk_sub$tidy_dataset()
+
+#t1_bee30_90 <- trans_network$new(dataset = meco_milk_sub, cor_method = NULL, taxa_level = "OTU", filter_thres = 0.003)
+# require beemStatic package installed
+#t1_bee30_90$cal_network(network_method = "beemStatic")
+
+sl(t1_bee30_90,t1_bee30_90)
+```
+
+### Phyla
+
+```{r, warning = F}
+t1_bee30_90$cal_sum_links(taxa_level = "Phylum")
+# require chorddiag package; see https://github.com/mattflor/chorddiag
+t1_bee30_90$plot_sum_links(plot_pos = TRUE, plot_num = 10, color_values = RColorBrewer::brewer.pal(10, "Paired"))
+```
+
+### Genera
+
+```{r, warning = F}
+t1_bee3$cal_sum_links(taxa_level = "Genus")
+# require chorddiag package; see https://github.com/mattflor/chorddiag
+t1_bee3$plot_sum_links(plot_pos = TRUE, plot_num = 10, color_values = RColorBrewer::brewer.pal(10, "Paired"))
+```
+
+## TODO Compare networks
+
+```{r, warning = F}
+
+```
+
+# Explainable class
+
+Creating trans_env object 
+
+```{r, warning = F}
+env <- select(meco_milk$sample_table,all_of(effect.size.variables)) %>%
+  mutate(Days = as.numeric(as.character(Days))) %>%
+  select(-c("Batch","AB.infant")) %>%
+  select(where(is.numeric)) %>%
+  drop_na(Gestational.age) %>%
+  drop_na() %>%
+  select_if(~ !any(is.na(.)))
+  
+t1 <- trans_env$new(dataset = meco_milk,
+                    add_data = env)
+```
+
+Generally, it is beneficial to analyze environmental variables in order to better use more methods. The cal_diff function is used to test the significance of variables across groups like we have shown in trans_alpha and trans_diff class parts.
+
+```{r, warning = F, eval = F}
+# use Wilcoxon Rank Sum Test as an example
+t1$cal_diff(group = "BMI.group", method = "wilcox")
+t1$res_diff
+```
+
+Let’s perform the ANOVA and show the letters in the box plot. We use list to store all the plots for each factor and plot them together.
+
+```{r, warning = F, fig.height= 25, fig.width=15, eval = F}
+t1$cal_diff(method = "anova", group = "BMI.group")
+# place all the plots into a list
+tmp <- list()
+for(i in colnames(t1$data_env)){
+    tmp[[i]] <- t1$plot_diff(measure = i, add_sig_text_size = 5, xtext_size = 12) + theme(plot.margin = unit(c(0.1, 0, 0, 1), "cm"))
+}
+plot(gridExtra::arrangeGrob(grobs = tmp, ncol = 3))
+
+ggsave("Metdata_anova_bmi.pdf",width=25,height=15,limitsize = FALSE)
+```
+
+Then we show the autocorrelations among variables.
+
+```{r, warning = F, eval = F}
+t1$cal_autocor(group="BMI.group")
+
+ggsave("Metdata_auto_cor.pdf",width=30,height=30,limitsize = FALSE)
+```
+
+## db-RDA - BrayCurtis
+
+```{r, warning = F}
+# use bray-curtis distance for dbRDA
+t1$cal_ordination(method = "dbRDA", use_measure = "bray")
+# t1$res_rda is the result list stored in the object
+t1$trans_ordination(adjust_arrow_length = TRUE, max_perc_env = 1.5)
+# t1$res_rda_trans is the transformed result for plotting
+t1$plot_ordination(plot_color = "Days", plot_type = c("point"))
+```
+
+From v0.14.0, the function cal_ordination_anova is implemented to check the significance of the ordination model instead of the encapsulation in cal_ordination. Furthermore, the function cal_ordination_envfit can be used to get the contribution of each variables to the model.
+
+```{r, warning = F}
+t1$cal_ordination_anova()
+t1$cal_ordination_envfit()
+```
+
+### Mantel test
+
+Mantel test can be used to check whether there is significant correlations between environmental variables and distance matrix.
+
+```{r, warning = F}
+t1$cal_mantel(use_measure = "bray", na.rm = TRUE)
+# return t1$res_mantel
+t1$res_mantel
+```
+
+#### Partial mantel
+
+```{r}
+# partial mantel test
+t1$cal_mantel(partial_mantel = TRUE, na.rm = TRUE)
+# return t1$res_mantel
+t1$res_mantel
+```
+
+## RDA
+
+### Genus
+
+```{r, warning = F}
+# use Genus
+t1$cal_ordination(method = "RDA", taxa_level = "Genus")
+# As the main results of RDA are related with the projection and angles between different arrows,
+# we adjust the length of the arrow to show them clearly using several parameters.
+t1$trans_ordination(show_taxa = 10, adjust_arrow_length = TRUE, max_perc_env = 1.5, max_perc_tax = 1.5, min_perc_env = 0.2, min_perc_tax = 0.2)
+# t1$res_rda_trans is the transformed result for plot
+t1$plot_ordination(plot_color = "BMI.group")
+```
+
+#### More styles
+
+```{r, warning = F}
+t1$plot_ordination(plot_color = "Days", plot_shape = "Days")
+t1$plot_ordination(plot_color = "Days", plot_shape = "Days", plot_type = c("point", "ellipse"))
+t1$plot_ordination(plot_color = "Days", plot_shape = "Days", plot_type = c("point", "centroid"))
+t1$plot_ordination(plot_color = "Days", plot_shape = "Days", plot_type = c("point", "chull"))
+t1$plot_ordination(plot_color = "Days", plot_shape = "Days", plot_type = c("point", "ellipse", "centroid"))
+t1$plot_ordination(plot_color = "Days", plot_shape = "Days", plot_type = c("point", "chull", "centroid"), add_sample_label = "RCID")
+t1$plot_ordination(plot_color = "Days", plot_shape = "Days", plot_type = "centroid", centroid_segment_alpha = 0.9, centroid_segment_size = 1, centroid_segment_linetype = 1)
+t1$plot_ordination(plot_color = "BMI.group", plot_type = c("point", "centroid"), centroid_segment_linetype = 1)
+```
+
+# Species environmental factors
+
+The correlations between environmental variables and taxa are important in analyzing and inferring the factors affecting community structure. Let’s first perform a correlation heatmap using relative abundance data at Genus level with the cal_cor function. The parameter p_adjust_type can control the p value adjustment type.
+
+```{r, warning = F}
+env <- select(meco_milk$sample_table,all_of(effect.size.variables)) %>%
+  select(-"Batch") %>%
+  mutate(Days = as.numeric(as.character(Days)))
+
+t1 <- trans_env$new(dataset = meco_milk, add_data = env)
+```
+
+
+
+```{r, warning = F}
+# 'p_adjust_type = "Env"' means p adjustment is performed for each environmental variable separately.
+t1$cal_cor(use_data = "Genus", p_adjust_method = "fdr", p_adjust_type = "Env")
+```
+
+Then, we can plot the correlation results using plot_cor function.
+
+```{r, warning = F}
+# default ggplot2 method with clustering
+t1$plot_cor()
+```
+
+There are too many genera. We can use the filter_feature parameter in plot_cor to filter some taxa that do not have any significance < 0.001.
+
+```{r, warning = F}
+# filter genera that donot have at least one ** or ***
+t1$plot_cor(filter_feature = c("", "*"))
+```
+
+Sometimes, if the user wants to do the correlation analysis between the environmental factors and some important taxa detected in the biomarker analysis, please use other_taxa parameter in cal_cor function.
+
+```{r, warning = F}
+# first create trans_diff object as a demonstration
+t2 <- trans_diff$new(dataset = meco_milk, method = "rf", group = "Days", taxa_level = "Genus")
+# then create trans_env object
+t1 <- trans_env$new(dataset = meco_milk, add_data = env)
+# use other_taxa to select taxa you need
+t1$cal_cor(use_data = "other", p_adjust_method = "fdr", other_taxa = t2$res_diff$Taxa)
+t1$plot_cor()
+```
+
+The pheatmap method is also available. Note that, besides the color_vector parameter, color_palette can also be used to control color palette with customized colors.
+
+```{r, warning = F}
+# clustering heatmap; require pheatmap package
+# Let's take another color pallete
+t1$plot_cor(pheatmap = TRUE, color_palette = rev(RColorBrewer::brewer.pal(n = 9, name = "RdYlBu")))
+```
+
+Sometimes, if it is needed to study the correlations between environmental variables and taxa for different groups, by_group parameter can be used for this goal.
+
+```{r, warning = F}
+# calculate correlations for different groups using parameter by_group
+t1$cal_cor(by_group = "BMI.group",  p_adjust_method = "fdr")
+# return t1$res_cor
+t1$plot_cor(filter_feature = c("", "*"))
+```
+
+# Alfa diversity 
+
+If the user is concerned with the relationship between environmental factors and alpha diversity, please use add_abund_table parameter in the cal_cor function.
+
+NB: NOT fdr corrected
+
+```{r, warning = F, evel = F}
+t1_alfa <- trans_env$new(dataset = meco_milk, add_data = env)
+# use add_abund_table parameter to add the extra data table
+t1_alfa$cal_cor(add_abund_table = meco_milk$alpha_diversity,p_adjust_method = "none")
+# try to use ggplot2 with clustering plot
+# require ggtree and aplot packages to be installed (https://chiliubio.github.io/microeco_tutorial/intro.html#dependence)
+t1_alfa$plot_cor(cluster_ggplot = "both")
+```
+
+# Functional predictions
+
+Ecological researchers are usually interested in the the funtional profiles of microbial communities, because functional or metabolic data is powerful to explain the structure and dynamics of microbial communities. As metagenomic sequencing is complicated and expensive, using amplicon sequencing data to predict functional profiles is an alternative choice. Several software are often used for this goal, such as PICRUSt (Langille et al. 2013), Tax4Fun (Aßhauer et al. 2015) and FAPROTAX (Stilianos Louca et al. 2016; S. Louca, Parfrey, and Doebeli 2016). These tools are great to be used for the prediction of functional profiles based on the prokaryotic communities from sequencing results. In addition, it is also important to obtain the traits or functions for each taxa, not just the whole profile of communities. FAPROTAX database is a collection of the traits and functions of prokaryotes based on the known research results published in books and literatures. We match the taxonomic information of prokaryotes against this database to predict the traits of prokaryotes on biogeochemical roles. The NJC19 database (Lim et al. 2020) is also available for animal-associated prokaryotic data, such as human gut microbiota. We also implement the FUNGuild (Nguyen et al. 2016) and FungalTraits (Põlme et al. 2020) databases to predict the fungal traits. The idea identifying prokaryotic traits and functional redundancy was initially inspired by our another study (Liu et al. 2022).
+
+We first identify/predict traits of taxa with the prokaryotic example data.
+
+```{r, warning = F}
+# create object of trans_func
+t2 <- trans_func$new(meco_milk)
+# mapping the taxonomy to the database
+# this can recognize prokaryotes or fungi automatically if the names of taxonomic levels are standard.
+# for fungi example, see https://chiliubio.github.io/microeco_tutorial/other-dataset.html#fungi-data
+# default database for prokaryotes is FAPROTAX database
+t2$cal_spe_func(prok_database = "FAPROTAX")
+```
+
+The percentages of the OTUs having the same trait can reflect the functional redundancy of this function in the community.
+
+```{r, warning = F}
+# calculate the percentages for communities
+# here do not consider the abundance
+t2$cal_spe_func_perc(abundance_weighted = FALSE)
+```
+
+Then we also take an example to show the percentages of the OTUs for each trait in network modules.
+
+```{r, warning = F}
+# construct a network for the example
+network <- trans_network$new(dataset = meco_milk, cal_cor = "base", taxa_level = "OTU", filter_thres = 0.0001, cor_method = "spearman")
+network$cal_network(p_thres = 0.01, COR_cut = 0.7)
+network$cal_module()
+# convert module info to microtable object
+meco_module <- network$trans_comm(use_col = "module")
+meco_module_func <- trans_func$new(meco_module)
+meco_module_func$cal_spe_func(prok_database = "FAPROTAX")
+meco_module_func$cal_spe_func_perc(abundance_weighted = FALSE)
+meco_module_func$plot_spe_func_perc(order_x = paste0("M", 1:10))
+```
+
+# Environmental factors vs functional predictions
+
+```{r, warning = F}
+# then we try to correlate the res_spe_func_perc of communities to environmental variables
+t3 <- trans_env$new(dataset = meco_milk, add_data = env)
+t3$cal_cor(add_abund_table = t2$res_spe_func_perc, cor_method = "spearman")
+t3$plot_cor(pheatmap = TRUE,filter_feature = c(""))
+```
+
+```{r, warning = F}
+
+```
+
+```{r, warning = F}
+
+```
+
+```{r, warning = F}
+
+```
+
+# Session info
+
+```{r}
+sessionInfo()
+```

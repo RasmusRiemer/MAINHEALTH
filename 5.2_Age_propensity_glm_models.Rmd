@@ -1,0 +1,1288 @@
+---
+title: "5.1_Age_propensity_glm"
+output: html_document
+date: "`r Sys.time()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(Matrix)
+library(tidyverse)
+library(lme4)
+library(ggpubr)
+
+subdir_name <- "5.1_Age_propensity_glm"
+
+readRDS(here::here("results","RData","5.1_Metabolome_microbiome_relations","propensityCV.merged.Rds"))
+```
+#Test example
+
+From https://ladal.edu.au/regression.html#Linear_Mixed-Effects_Regression
+
+```{r}
+
+data(mtcars)
+
+myexp.rand = paste("mpg", "~ 1","+ (1|cyl)")
+
+m0.lmer = lme4::lmer(as.formula(myexp.rand), REML = T, data = mtcars)
+
+myexp.rand = paste("mpg", "~ 1","+ (1|cyl)")
+
+m0.lmer = lme4::lmer(as.formula(myexp.rand), REML = T, data = mtcars)
+```
+
+# Load and prep data
+
+```{r}
+source("Supplementary_scripts/utils.R")
+
+#reg.dat <- prop.dat %>% dplyr::select(Days,propCV.milk.css,propCV.faec.css,propCV.milk.metab)
+
+
+# propensityCV.merged <- readRDS("C:/Users/nbf206/OneDrive - University of Copenhagen/Reasearch Assistant/MAINHEALTH/Data analysis/Complete_laca_analysis/results/RData/5.1_Metabolome_microbiome_relations/propensityCV.merged.Rds")
+
+propensityCV.merged <- readRDS(here::here("results", "RData", "5.1_Metabolome_microbiome_relations","propensityCV.merged.Rds"))
+
+prop.dat.all <- propensityCV.merged %>%
+  mutate(Days = str_extract(RCID, "(?<=_).*")) %>%
+  mutate(Days = case_when(
+    Days == "3" ~ "30",
+    Days == "4" ~ "60",
+    Days == "5" ~ "90",
+    Days == "2" ~ "3",
+    TRUE ~ Days  # Keeps all other values as they are
+  )) %>%
+  mutate(ID = str_extract(RCID, "^[^_]*")) %>%
+  mutate_at(vars(Days, RCID, ID), factor)
+
+prop.dat.all$Days <- as.numeric(as.character(prop.dat.all$Days))
+
+head(prop.dat.all)
+```
+
+
+# Milk
+
+## Plot time-propensity relationships
+
+```{r}
+
+prop.score <- "propCV.milk.css"
+sample.type <- "Milk"
+
+#############prep
+
+#Remomove NA rows
+prop.dat <- prop.dat.all %>%
+  filter(.data[[prop.score]] != 0) 
+map.dat <- read.delim2("Data/merged_metadata.txt", sep = '\t', stringsAsFactors = FALSE, check.names = FALSE, row.names = 1, header = TRUE, fileEncoding="Latin1") %>%
+  filter(Sample.type=="Milk") %>%
+  type.convert(as.is = TRUE) %>%
+  distinct(RCID, .keep_all = TRUE) %>% #Romove dulicate RCID entries to avoid join issues
+  dplyr::select(.,c("RCID","Batch","Secretor")) %>%
+  mutate_all(as.factor)
+
+prop.dat <- inner_join(prop.dat,
+                   map.dat,
+                   by="RCID")
+
+prop.dat <- prop.dat %>%
+  filter(!is.na(Secretor))
+
+
+################
+
+
+ggplot(prop.dat, aes_string(x="Days", y=prop.score)) + 
+  geom_point()+
+  stat_smooth(method=lm) +
+  ggtitle("Mílk bac maturity vs time") +
+  stat_cor(method = "pearson") 
+
+myexp <- paste(prop.score, "~ Days")
+
+# Calculate maturation z-score based on linear regression model
+lm.prop.age <- summary(glm(as.formula(myexp), data = prop.dat))
+lm.prop.age
+
+prop.dat.all$milk.bac.z <- (prop.dat.all[[prop.score]]-((lm.prop.age$coefficients[2]*prop.dat.all$Days)+lm.prop.age$coefficients[1]))
+
+prop.dat.all$milk.bac.z[is.na(prop.dat.all[[prop.score]])] <- NA
+
+## RCID as fixed effect
+
+prop.dat.sel <- prop.dat %>%
+  mutate(ID_numeric = as.numeric(as.character(ID))) %>%
+  filter(ID_numeric >= 1 & ID_numeric <= 50)
+
+
+ggplot(prop.dat.sel, aes_string(x="Days", y=prop.score)) + 
+  geom_point()+
+  stat_smooth(method=lm) +
+  ggtitle("Maturity vs time") +
+  stat_cor(method = "pearson") +
+  facet_wrap("ID") +
+  ylim(c(-10,100))
+
+myexp <- paste(prop.score, "~ Days+ID")
+
+summary(glm(as.formula(myexp), data = prop.dat))
+```
+
+## Linear models
+
+### Testing random effects
+
+```{r}
+
+myexp = paste(prop.score, "~ 1")
+m0.glm <- glm(as.formula(myexp), family = gaussian, data = prop.dat)
+# m0.glm <- glm(propCV.milk.css ~ 1, family = gaussian, data = prop.dat)
+
+summary(m0.glm)
+
+library(lme4)
+
+myexp.rand = paste(prop.score, "~ 1","+ (1|ID)")
+
+m0.lmer = lme4::lmer(as.formula(myexp.rand),
+                     REML = T,
+                     data = prop.dat)
+
+AIC(logLik(m0.glm))
+
+AIC(logLik(m0.lmer))
+
+```
+
+The inclusion of a random effect structure with random intercepts is justified as the AIC of the model with random intercepts is substantially lower than the AIC of the model without random intercepts.
+
+While I do not how how to test if including a random effect is justified, there are often situations, which require to test exactly which random effect structure is best. When doing this, it is important to use restricted maximum likelihood (REML = TRUE or method = REML) rather than maximum likelihood (see Pinheiro and Bates 2000; Winter 2019, 226).
+
+```{r}
+# generate models with 2 different random effect structures
+myexp = paste(prop.score, "~ Days","+ (1|ID)")
+ma.lmer = lmer(as.formula(myexp), REML = T, data = prop.dat)
+
+
+myexp = paste(prop.score, "~ Days","+ (1 + Days | ID)")
+mb.lmer = lmer(as.formula(myexp), REML = T, data = prop.dat)
+# compare models
+anova(ma.lmer, mb.lmer, test = "Chisq", refit = F)
+```
+The model comparison shows that the model with the more complex random effect structure has a significantly better fit to the data compared with the model with the simpler random effect structure.
+
+## Model fitting
+
+After having determined that including a random effect structure is justified, we can continue by fitting the model and including diagnostics as we go. Including diagnostics in the model fitting process can save time and prevent relying on models which only turn out to be unstable if we would perform the diagnostics after the fact.
+
+We begin fitting our model by adding Days as a fixed effect and compare this model to our mixed-effects base-line model to see if Days improved the model fit by explaining variance and if Days significantly correlates with our dependent variable (this means that the difference between the models is the effect (size) of Days!)
+
+```{r}
+myexp = paste(prop.score,"~ (1 + Days | ID)", "+ Days")
+m1.lmer <- lmer(as.formula(myexp), REML = T, data = prop.dat)
+anova(m1.lmer, m0.lmer, test = "Chi")
+```
+The model with Days is the better model (significant p-value and lower AIC). The significant p-value shows that Days correlates significantly with Prepositions (χ2(1): 8.929600937903, p = 0.00281) . The χ2 value here is labeled Chisq and the degrees of freedom are calculated by subtracting the smaller number of DFs from the larger number of DFs.
+
+#### Including Sectretor, Lewis and Batch
+
+We now test whether Batch should also be part of the final minimal adequate model. The easiest way to add predictors is by using the update function (it saves time and typing).
+
+```{r , eval = F}
+
+
+# generate model
+m2.lmer <- update(m1.lmer, .~.+ Batch)
+# test vifs
+car::vif(m2.lmer)
+#compare models                
+anova(m2.lmer, m1.lmer, test = "Chi")
+```
+We see a modest increase in AIC and p-value, so the model does improve by including Batch
+
+Including secretor or lewis status did not improve model fit
+
+Finally we fit a model with Batch and Days as an interaction
+
+```{r}
+# generate model
+m3.lmer <- update(m1.lmer, .~.+  Batch*Days)
+# extract vifs
+car::vif(m3.lmer)
+# compare models                
+anova(m3.lmer, m1.lmer, test = "Chi")
+```
+This further improves the model, so we should include Batch for a fit
+
+### Inspect models
+
+```{r}
+# inspect results
+summary(m0.lmer)
+summary(m1.lmer)
+summary(m3.lmer)
+```
+### Model diagnostics
+
+
+We can now evaluate the goodness of fit of the model and check if mathematical requirements and assumptions have been violated. In a first step, we generate diagnostic plots that focus on the random effect structure.
+
+#### IDs
+
+```{r,fig.height=20,fig.width=10,unit="cm"}
+plot(m1.lmer, ID ~ resid(.), abline = 0 ) # generate diagnostic plots
+```
+
+#### Batch
+
+```{r,fig.height=20,fig.width=10,unit="cm"}
+plot(m1.lmer, as.factor(Batch) ~ resid(.), abline = 0 ) # generate diagnostic plots
+```
+
+The plot shows that there are some outliers (points outside the boxes) and that the variability within letters is greater than in other genres we therefore examine the genres in isolation standardized residuals versus fitted values (Pinheiro and Bates 2000, 175).
+
+```{r}
+plot(m1.lmer, resid(., type = "pearson") ~ fitted(.) | Batch, id = 0.05, 
+     adj = -0.3, pch = 20, col = "gray40",nrow=1)
+```
+
+The plot shows the standardized residuals (or Pearson’s residuals) versus fitted values and suggests that there are outliers in the data (the names elements in the plots). To check if these outliers are a cause for concern, we will now use a Levene’s test to check if the variance is distributed homogeneously (homoscedasticity) or whether the assumption of variance homogeneity is violated (due to the outliers).
+
+```{r}
+# check homogeneity
+car::leveneTest(prop.dat$Days, prop.dat$ID, center = mean)
+```
+#### Weighted model
+
+```{r}
+library(nlme)
+
+# generate models
+myexp = paste(prop.score,"~ Days")
+m4.lme = lme(as.formula(myexp), random = ~1+Days|ID, data = prop.dat, method = "ML")
+
+m5.lme <- update(m4.lme, weights = varIdent(form = ~ 1 | Batch))
+# compare models
+anova(m5.lme, m4.lme)
+```
+
+The weight model (m5.lme) that uses weights to account for unequal variance is performing significantly better than the model without weights (m4.lme) and we therefore switch to the weight model and inspect its parameters.
+
+```{r}
+# inspect results
+summary(m5.lme)
+
+anova(m5.lme)          
+```
+
+As we did before, we now check, whether the final minimal model (with weights) outperforms an intercept-only base-line model.
+
+```{r}
+# generate base-line model
+myexp = paste(prop.score,"~ 1")
+m0.lme = lme(as.formula(myexp), random = ~1|ID, data = prop.dat, method = "ML", weights = varIdent(form = ~ 1 | Batch))
+
+anova(m0.lme, m5.lme)  # test if date is significant
+```
+
+Our final minimal adequate model with weights performs significantly better than an intercept only base-line model. Before doing the final diagnostics, we well inspect the estimates for the random effect structure to check if there are values which require further inspection (e.g. because they are drastically different from all other values).
+
+```{r}
+# extract estimates and sd for fixed and random effects
+intervals(m5.lme, which="fixed")      
+```
+
+The random effect estimates do not show any outliers or drastically increased or decreased values which means that the random effect structure is fine.
+
+## Effect Sizes
+
+```{r}
+sjPlot::tab_model(m5.lme)
+```
+
+```{r}
+
+# extract R2s
+MuMIn::r.squaredGLMM(m1.lmer)
+```
+
+(not working) The effects can be visualized using the plot_model function from the sjPlot package (Lüdecke 2021).
+
+```{r,eval=F}
+sjPlot::plot_model(m5.lme, type = "pred", terms = c("Days")) +
+  # show uncentered date rather than centered date
+  scale_x_continuous(name = "Days", 
+                     breaks = seq(-500, 300, 100), 
+                     labels = seq(1150, 1950, 100))
+
+sjPlot::plot_model(m5.lme, type = "pred", terms = c("Days"))
+```
+
+While we have already shown that the effect of Days is significant, it is small which means that the number of prepositions per text does not correlate very strongly with time. This suggests that other factors that are not included in the model also impact the frequency of prepositions (and probably more meaningfully, too).
+
+Before turning to the diagnostics, we will use the fitted (or predicted) and the observed values with a regression line for the predicted values. This will not only show how good the model fit the data but also the direction and magnitude of the effect.
+
+```{r,eval=F,warning=F,fig.width=20,fig.height=25,unit="cm"}
+# extract predicted values
+prop.dat$Predicted <- predict(m5.lme, prop.dat)
+# plot predicted values
+ggplot(prop.dat, aes(Days, Predicted)) +
+  facet_wrap(~ID) +
+  geom_point(aes(x = Days, y = prop.score), color = "gray80", size = .5) +
+  geom_smooth(aes(y = Predicted), color = "gray20", linetype = "solid",
+              se = T, method = "lm") +
+  guides(color=guide_legend(override.aes=list(fill=NA))) +  
+  theme_set(theme_bw(base_size = 10)) +
+  theme(legend.position="top", legend.title = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()) + 
+  xlab("Days")
+```
+
+## Model Diagnostics
+
+We now create diagnostic plots. What we wish to see in the diagnostic plots is a cloud of dots in the middle of the window without any structure. What we do not want to see is a funnel-shaped cloud because this indicates an increase of the errors/residuals with an increase of the predictor(s) (because this would indicate heteroscedasticity) (Pinheiro and Bates 2000, 182).
+
+```{r}
+# start plotting
+par(mfrow = c(2, 2))           # display plots in 2 rows and 2 columns
+plot(m5.lme, pch = 20, col = "black", lty = "dotted"); par(mfrow = c(1, 1))
+```
+
+What a wonderful unstructured cloud - the lack of structure tells us that the model is “healthy” and does not suffer from heteroscedasticity. We will now create more diagnostic plots to find potential problems (Pinheiro and Bates 2000, 21).
+
+```{r,warning=F,fig.width=20,fig.height=25,unit="cm"}
+# fitted values by Genre
+plot(m5.lme, form = resid(., type = "p") ~ fitted(.) | ID, abline = 0, 
+     cex = .5, pch = 20, col = "black")
+```
+
+In contrast to the unweight model, no data points are named which indicates that the outliers do no longer have unwarranted influence on the model. Now, we check the residuals of fitted values against observed values (Pinheiro and Bates 2000, 179). What we would like to see is a straight, upwards going line.
+
+```{r}
+# residuals of fitted values against observed
+qqnorm(m5.lme, pch = 20, col = "black")
+```
+
+A beautiful, straight line! The qqplot does not indicate any problems. It is, unfortunately, rather common that the dots deviate from the straight line at the very bottom or the very top which means that the model is good at estimating values around the middle of the dependent variable but rather bad at estimating lower or higher values. Next, we check the residuals by “Genre” (Pinheiro and Bates 2000, 179).
+
+```{r,warning=F,fig.width=20,fig.height=25,unit="cm"}
+# residuals by genre
+qqnorm(m5.lme, ~resid(.) | ID, pch = 20, col = "black" )
+```
+Beautiful straight lines - perfection! Now, we inspect the observed responses versus the within-group fitted values (Pinheiro and Bates 2000, 178).
+
+```{r}
+# observed responses versus the within-group fitted values
+myexp = paste(prop.score,"~ fitted(.)")
+plot(m5.lme, as.formula(myexp), id = 0.05, adj = -0.3, 
+     cex = .8, pch = 20, col = "blue")
+```
+
+Although some data points are named, the plot does not show any structure, like a funnel, which would have been problematic.
+
+## Reporting Results
+
+Before we do the write-up, we have a look at the model summary as this will provide us with at least some of the parameters that we want to report.
+
+```{r}
+summary(m5.lme)
+```
+
+```{r}
+sjPlot::tab_model(m5.lme)
+```
+
+```{r}
+MuMIn::r.squaredGLMM(m0.lmer)
+
+MuMIn::r.squaredGLMM(m1.lmer)
+
+#uMIn::r.squaredGLMM(m2.lmer)
+
+MuMIn::r.squaredGLMM(m3.lmer)
+
+MuMIn::r.squaredGLMM(m4.lme)
+
+MuMIn::r.squaredGLMM(m5.lme)
+```
+
+(Does not work for factors) We can use the reports package (Makowski et al. 2021) to summarize the analysis.
+
+```{r,eval=F}
+report::report(m5.lme)
+```
+
+# Faecal samples
+
+## Plot time-propensity relationships
+
+```{r,warning=F}
+
+prop.score <- "propCV.faec.css"
+sample.type <- "Faecal sample"
+
+#############prep
+
+#Remomove NA rows
+prop.dat <- prop.dat.all %>%
+  filter(.data[[prop.score]] != 0) 
+map.dat <- read.delim2("Data/merged_metadata.txt", sep = '\t', stringsAsFactors = FALSE, check.names = FALSE, row.names = 1, header = TRUE, fileEncoding="Latin1") %>%
+  filter(Sample.type=="Milk") %>%
+  type.convert(as.is = TRUE) %>%
+  distinct(RCID, .keep_all = TRUE) %>% #Romove dulicate RCID entries to avoid join issues
+  dplyr::select(.,c("RCID","Batch","Secretor")) %>%
+  mutate_all(as.factor)
+
+prop.dat <- inner_join(prop.dat,
+                   map.dat,
+                   by="RCID")
+
+prop.dat <- prop.dat %>%
+  filter(!is.na(Secretor))
+
+
+################
+
+
+ggplot(prop.dat, aes_string(x="Days", y=prop.score)) + 
+  geom_point()+
+  stat_smooth(method=lm) +
+  ggtitle("Faecal bac maturity vs time") +
+  stat_cor(method = "pearson") 
+
+myexp <- paste(prop.score, "~ Days")
+summary(glm(as.formula(myexp), data = prop.dat))
+
+
+lm.prop.age <- summary(glm(as.formula(myexp), data = prop.dat))
+lm.prop.age
+
+prop.dat.all$faec.bac.z <- (prop.dat.all[[prop.score]]-((lm.prop.age$coefficients[2]*prop.dat.all$Days)+lm.prop.age$coefficients[1]))
+
+prop.dat.all$faec.bac.z[is.na(prop.dat.all[[prop.score]])] <- NA
+
+## RCID as fixed effect
+
+prop.dat.sel <- prop.dat %>%
+  mutate(ID_numeric = as.numeric(as.character(ID))) %>%
+  filter(ID_numeric >= 1 & ID_numeric <= 50)
+
+
+ggplot(prop.dat.sel, aes_string(x="Days", y=prop.score)) + 
+  geom_point()+
+  stat_smooth(method=lm) +
+  ggtitle("Maturity vs time") +
+  stat_cor(method = "pearson") +
+  facet_wrap("ID") +
+  ylim(c(-10,100))
+
+myexp <- paste(prop.score, "~ Days+ID")
+summary(glm(as.formula(myexp), data = prop.dat))
+
+
+```
+## Linear models
+
+### Testing random effects
+
+```{r}
+
+myexp = paste(prop.score, "~ 1")
+m0.glm <- glm(as.formula(myexp), family = gaussian, data = prop.dat)
+# m0.glm <- glm(propCV.milk.css ~ 1, family = gaussian, data = prop.dat)
+
+summary(m0.glm)
+
+library(lme4)
+
+myexp.rand = paste(prop.score, "~ 1","+ (1|ID)")
+
+m0.lmer = lme4::lmer(as.formula(myexp.rand),
+                     REML = T,
+                     data = prop.dat)
+
+AIC(logLik(m0.glm))
+
+AIC(logLik(m0.lmer))
+
+```
+
+The inclusion of a random effect structure with random intercepts is justified as the AIC of the model with random intercepts is substantially lower than the AIC of the model without random intercepts.
+
+While I do not how how to test if including a random effect is justified, there are often situations, which require to test exactly which random effect structure is best. When doing this, it is important to use restricted maximum likelihood (REML = TRUE or method = REML) rather than maximum likelihood (see Pinheiro and Bates 2000; Winter 2019, 226).
+
+```{r}
+# generate models with 2 different random effect structures
+myexp = paste(prop.score, "~ Days","+ (1|ID)")
+ma.lmer = lmer(as.formula(myexp), REML = T, data = prop.dat)
+
+
+myexp = paste(prop.score, "~ Days","+ (1 + Days | ID)")
+mb.lmer = lmer(as.formula(myexp), REML = T, data = prop.dat)
+# compare models
+anova(ma.lmer, mb.lmer, test = "Chisq", refit = F)
+```
+The model comparison shows that the model with the more complex random effect structure has a significantly better fit to the data compared with the model with the simpler random effect structure.
+
+## Model fitting
+
+After having determined that including a random effect structure is justified, we can continue by fitting the model and including diagnostics as we go. Including diagnostics in the model fitting process can save time and prevent relying on models which only turn out to be unstable if we would perform the diagnostics after the fact.
+
+We begin fitting our model by adding Days as a fixed effect and compare this model to our mixed-effects base-line model to see if Days improved the model fit by explaining variance and if Days significantly correlates with our dependent variable (this means that the difference between the models is the effect (size) of Days!)
+
+```{r}
+myexp = paste(prop.score,"~ (1 + Days | ID)", "+ Days")
+m1.lmer <- lmer(as.formula(myexp), REML = T, data = prop.dat)
+anova(m1.lmer, m0.lmer, test = "Chi")
+```
+The model with Days is the better model (significant p-value and lower AIC). The significant p-value shows that Days correlates significantly with Prepositions (χ2(1): 8.929600937903, p = 0.00281) . The χ2 value here is labeled Chisq and the degrees of freedom are calculated by subtracting the smaller number of DFs from the larger number of DFs.
+
+#### Including Sectretor, Lewis and Batch
+
+We now test whether Batch should also be part of the final minimal adequate model. The easiest way to add predictors is by using the update function (it saves time and typing).
+
+```{r , eval = F}
+
+
+# generate model
+m2.lmer <- update(m1.lmer, .~.+ Batch)
+# test vifs
+car::vif(m2.lmer)
+#compare models                
+anova(m2.lmer, m1.lmer, test = "Chi")
+```
+We see a modest increase in AIC and p-value, so the model does improve by including Batch
+
+Including secretor or lewis status did not improve model fit
+
+Finally we fit a model with Batch and Days as an interaction
+
+```{r}
+# generate model
+m3.lmer <- update(m1.lmer, .~.+  Batch*Days)
+# extract vifs
+car::vif(m3.lmer)
+# compare models                
+anova(m3.lmer, m1.lmer, test = "Chi")
+```
+This further improves the model, so we should include Batch for a fit
+
+### Inspect models
+
+```{r}
+# inspect results
+summary(m0.lmer)
+summary(m1.lmer)
+summary(m3.lmer)
+```
+### Model diagnostics
+
+
+We can now evaluate the goodness of fit of the model and check if mathematical requirements and assumptions have been violated. In a first step, we generate diagnostic plots that focus on the random effect structure.
+
+#### IDs
+
+```{r,fig.height=20,fig.width=10,unit="cm"}
+plot(m1.lmer, ID ~ resid(.), abline = 0 ) # generate diagnostic plots
+```
+
+#### Batch
+
+```{r,fig.height=20,fig.width=10,unit="cm"}
+plot(m1.lmer, as.factor(Batch) ~ resid(.), abline = 0 ) # generate diagnostic plots
+```
+
+The plot shows that there are some outliers (points outside the boxes) and that the variability within letters is greater than in other genres we therefore examine the genres in isolation standardized residuals versus fitted values (Pinheiro and Bates 2000, 175).
+
+```{r}
+plot(m1.lmer, resid(., type = "pearson") ~ fitted(.) | Batch, id = 0.05, 
+     adj = -0.3, pch = 20, col = "gray40",nrow=1)
+```
+
+The plot shows the standardized residuals (or Pearson’s residuals) versus fitted values and suggests that there are outliers in the data (the names elements in the plots). To check if these outliers are a cause for concern, we will now use a Levene’s test to check if the variance is distributed homogeneously (homoscedasticity) or whether the assumption of variance homogeneity is violated (due to the outliers).
+
+```{r}
+# check homogeneity
+car::leveneTest(prop.dat$Days, prop.dat$ID, center = mean)
+```
+#### Weighted model
+
+```{r}
+library(nlme)
+
+# generate models
+myexp = paste(prop.score,"~ Days")
+m4.lme = lme(as.formula(myexp), random = ~1|ID, data = prop.dat, method = "ML")
+
+m5.lme <- update(m4.lme, weights = varIdent(form = ~ 1 | Batch))
+# compare models
+anova(m5.lme, m4.lme)
+```
+
+The weight model (m5.lme) that uses weights to account for unequal variance is performing significantly better than the model without weights (m4.lme) and we therefore switch to the weight model and inspect its parameters.
+
+```{r}
+# inspect results
+summary(m5.lme)
+
+anova(m5.lme)          
+```
+
+As we did before, we now check, whether the final minimal model (with weights) outperforms an intercept-only base-line model.
+
+```{r}
+# generate base-line model
+myexp = paste(prop.score,"~ 1")
+m0.lme = lme(as.formula(myexp), random = ~1|ID, data = prop.dat, method = "ML", weights = varIdent(form = ~ 1 | Batch))
+
+anova(m0.lme, m5.lme)  # test if date is significant
+```
+
+Our final minimal adequate model with weights performs significantly better than an intercept only base-line model. Before doing the final diagnostics, we well inspect the estimates for the random effect structure to check if there are values which require further inspection (e.g. because they are drastically different from all other values).
+
+```{r}
+# extract estimates and sd for fixed and random effects
+intervals(m5.lme, which="fixed")      
+```
+
+The random effect estimates do not show any outliers or drastically increased or decreased values which means that the random effect structure is fine.
+
+## Effect Sizes
+
+```{r}
+sjPlot::tab_model(m5.lme)
+```
+
+```{r}
+
+# extract R2s
+MuMIn::r.squaredGLMM(m1.lmer)
+```
+
+(not working) The effects can be visualized using the plot_model function from the sjPlot package (Lüdecke 2021).
+
+```{r,eval=F}
+sjPlot::plot_model(m5.lme, type = "pred", terms = c("Days")) +
+  # show uncentered date rather than centered date
+  scale_x_continuous(name = "Days", 
+                     breaks = seq(-500, 300, 100), 
+                     labels = seq(1150, 1950, 100))
+
+sjPlot::plot_model(m5.lme, type = "pred", terms = c("Days"))
+```
+
+While we have already shown that the effect of Days is significant, it is small which means that the number of prepositions per text does not correlate very strongly with time. This suggests that other factors that are not included in the model also impact the frequency of prepositions (and probably more meaningfully, too).
+
+Before turning to the diagnostics, we will use the fitted (or predicted) and the observed values with a regression line for the predicted values. This will not only show how good the model fit the data but also the direction and magnitude of the effect.
+
+```{r,eval=F,warning=F,fig.width=20,fig.height=25,unit="cm"}
+# extract predicted values
+prop.dat$Predicted <- predict(m5.lme, prop.dat)
+# plot predicted values
+ggplot(prop.dat, aes(Days, Predicted)) +
+  facet_wrap(~ID) +
+  geom_point(aes(x = Days, y = prop.score), color = "gray80", size = .5) +
+  geom_smooth(aes(y = Predicted), color = "gray20", linetype = "solid",
+              se = T, method = "lm") +
+  guides(color=guide_legend(override.aes=list(fill=NA))) +  
+  theme_set(theme_bw(base_size = 10)) +
+  theme(legend.position="top", legend.title = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()) + 
+  xlab("Days")
+```
+
+## Model Diagnostics
+
+We now create diagnostic plots. What we wish to see in the diagnostic plots is a cloud of dots in the middle of the window without any structure. What we do not want to see is a funnel-shaped cloud because this indicates an increase of the errors/residuals with an increase of the predictor(s) (because this would indicate heteroscedasticity) (Pinheiro and Bates 2000, 182).
+
+```{r}
+# start plotting
+par(mfrow = c(2, 2))           # display plots in 2 rows and 2 columns
+plot(m5.lme, pch = 20, col = "black", lty = "dotted"); par(mfrow = c(1, 1))
+```
+
+What a wonderful unstructured cloud - the lack of structure tells us that the model is “healthy” and does not suffer from heteroscedasticity. We will now create more diagnostic plots to find potential problems (Pinheiro and Bates 2000, 21).
+
+```{r,warning=F,fig.width=20,fig.height=25,unit="cm"}
+# fitted values by Genre
+plot(m5.lme, form = resid(., type = "p") ~ fitted(.) | ID, abline = 0, 
+     cex = .5, pch = 20, col = "black")
+```
+
+In contrast to the unweight model, no data points are named which indicates that the outliers do no longer have unwarranted influence on the model. Now, we check the residuals of fitted values against observed values (Pinheiro and Bates 2000, 179). What we would like to see is a straight, upwards going line.
+
+```{r}
+# residuals of fitted values against observed
+qqnorm(m5.lme, pch = 20, col = "black")
+```
+
+A beautiful, straight line! The qqplot does not indicate any problems. It is, unfortunately, rather common that the dots deviate from the straight line at the very bottom or the very top which means that the model is good at estimating values around the middle of the dependent variable but rather bad at estimating lower or higher values. Next, we check the residuals by “Genre” (Pinheiro and Bates 2000, 179).
+
+```{r,warning=F,fig.width=20,fig.height=25,unit="cm"}
+# residuals by genre
+qqnorm(m5.lme, ~resid(.) | ID, pch = 20, col = "black" )
+```
+Beautiful straight lines - perfection! Now, we inspect the observed responses versus the within-group fitted values (Pinheiro and Bates 2000, 178).
+
+```{r}
+# observed responses versus the within-group fitted values
+myexp = paste(prop.score,"~ fitted(.)")
+plot(m5.lme, as.formula(myexp), id = 0.05, adj = -0.3, cex = .8, pch = 20, col = "blue")
+```
+
+## Reporting Results
+
+Before we do the write-up, we have a look at the model summary as this will provide us with at least some of the parameters that we want to report.
+
+```{r}
+summary(m5.lme)
+```
+
+```{r}
+sjPlot::tab_model(m5.lme)
+```
+
+```{r}
+MuMIn::r.squaredGLMM(m0.lmer)
+
+MuMIn::r.squaredGLMM(m1.lmer)
+
+#uMIn::r.squaredGLMM(m2.lmer)
+
+MuMIn::r.squaredGLMM(m3.lmer)
+
+MuMIn::r.squaredGLMM(m4.lme)
+
+MuMIn::r.squaredGLMM(m5.lme)
+```
+
+(Does not work for factors) We can use the reports package (Makowski et al. 2021) to summarize the analysis.
+
+```{r,eval=F}
+report::report(m5.lme)
+```
+
+# Milk metabolome
+
+## Plot time-propensity relationships
+
+```{r}
+
+prop.score <- "propCV.milk.metab"
+sample.type <- "Faecal sample"
+
+#############prep
+
+#Remomove NA rows
+prop.dat <- prop.dat.all %>%
+  filter(.data[[prop.score]] != 0) 
+map.dat <- read.delim2("Data/merged_metadata.txt", sep = '\t', stringsAsFactors = FALSE, check.names = FALSE, row.names = 1, header = TRUE, fileEncoding="Latin1") %>%
+  filter(Sample.type=="Milk") %>%
+  type.convert(as.is = TRUE) %>%
+  distinct(RCID, .keep_all = TRUE) %>% #Romove dulicate RCID entries to avoid join issues
+  dplyr::select(.,c("RCID","Batch","Secretor")) %>%
+  mutate_all(as.factor)
+
+prop.dat <- inner_join(prop.dat,
+                   map.dat,
+                   by="RCID")
+
+prop.dat <- prop.dat %>%
+  filter(!is.na(Secretor))
+
+
+################
+
+
+ggplot(prop.dat, aes_string(x="Days", y=prop.score)) + 
+  geom_point()+
+  stat_smooth(method=lm) +
+  ggtitle("Milk metab maturity vs time") +
+  stat_cor(method = "pearson") 
+
+myexp <- paste(prop.score, "~ Days")
+summary(glm(as.formula(myexp), data = prop.dat))
+
+
+lm.prop.age <- summary(glm(as.formula(myexp), data = prop.dat))
+lm.prop.age
+
+prop.dat.all$milk.metab.z <- (prop.dat.all[[prop.score]]-((lm.prop.age$coefficients[2]*prop.dat.all$Days)+lm.prop.age$coefficients[1]))
+prop.dat.all$milk.metab.z[is.na(prop.dat.all[[prop.score]])] <- NA
+
+## RCID as fixed effect
+
+prop.dat.sel <- prop.dat %>%
+  mutate(ID_numeric = as.numeric(as.character(ID))) %>%
+  filter(ID_numeric >= 1 & ID_numeric <= 50)
+
+
+ggplot(prop.dat.sel, aes_string(x="Days", y=prop.score)) + 
+  geom_point()+
+  stat_smooth(method=lm) +
+  ggtitle("Maturity vs time") +
+  stat_cor(method = "pearson") +
+  facet_wrap("ID") +
+  ylim(c(-10,100))
+
+myexp <- paste(prop.score, "~ Days+ID")
+summary(glm(as.formula(myexp), data = prop.dat))
+
+
+```
+## Linear models
+
+### Testing random effects
+
+```{r}
+
+myexp = paste(prop.score, "~ 1")
+m0.glm <- glm(as.formula(myexp), family = gaussian, data = prop.dat)
+# m0.glm <- glm(propCV.milk.css ~ 1, family = gaussian, data = prop.dat)
+
+summary(m0.glm)
+
+library(lme4)
+
+myexp.rand = paste(prop.score, "~ 1","+ (1|ID)")
+
+m0.lmer = lme4::lmer(as.formula(myexp.rand),
+                     REML = T,
+                     data = prop.dat)
+
+AIC(logLik(m0.glm))
+
+AIC(logLik(m0.lmer))
+
+```
+
+The inclusion of a random effect structure with random intercepts is justified as the AIC of the model with random intercepts is substantially lower than the AIC of the model without random intercepts.
+
+While I do not how how to test if including a random effect is justified, there are often situations, which require to test exactly which random effect structure is best. When doing this, it is important to use restricted maximum likelihood (REML = TRUE or method = REML) rather than maximum likelihood (see Pinheiro and Bates 2000; Winter 2019, 226).
+
+```{r}
+# generate models with 2 different random effect structures
+myexp = paste(prop.score, "~ Days","+ (1|ID)")
+ma.lmer = lmer(as.formula(myexp), REML = T, data = prop.dat)
+
+
+myexp = paste(prop.score, "~ Days","+ (1 + Days | ID)")
+mb.lmer = lmer(as.formula(myexp), REML = T, data = prop.dat)
+# compare models
+anova(ma.lmer, mb.lmer, test = "Chisq", refit = F)
+```
+The model comparison shows that the model with the more complex random effect structure has a significantly better fit to the data compared with the model with the simpler random effect structure.
+
+## Model fitting
+
+After having determined that including a random effect structure is justified, we can continue by fitting the model and including diagnostics as we go. Including diagnostics in the model fitting process can save time and prevent relying on models which only turn out to be unstable if we would perform the diagnostics after the fact.
+
+We begin fitting our model by adding Days as a fixed effect and compare this model to our mixed-effects base-line model to see if Days improved the model fit by explaining variance and if Days significantly correlates with our dependent variable (this means that the difference between the models is the effect (size) of Days!)
+
+```{r}
+myexp = paste(prop.score,"~ (1 + Days | ID)", "+ Days")
+m1.lmer <- lmer(as.formula(myexp), REML = T, data = prop.dat)
+anova(m1.lmer, m0.lmer, test = "Chi")
+```
+The model with Days is the better model (significant p-value and lower AIC). The significant p-value shows that Days correlates significantly with Prepositions (χ2(1): 8.929600937903, p = 0.00281) . The χ2 value here is labeled Chisq and the degrees of freedom are calculated by subtracting the smaller number of DFs from the larger number of DFs.
+
+#### Including Sectretor, Lewis and Batch
+
+We now test whether Batch should also be part of the final minimal adequate model. The easiest way to add predictors is by using the update function (it saves time and typing).
+
+```{r , eval = F}
+
+
+# generate model
+m2.lmer <- update(m1.lmer, .~.+ Batch)
+# test vifs
+car::vif(m2.lmer)
+#compare models                
+anova(m2.lmer, m1.lmer, test = "Chi")
+```
+We see a modest increase in AIC and p-value, so the model does improve by including Batch
+
+Including secretor or lewis status did not improve model fit
+
+Finally we fit a model with Batch and Days as an interaction
+
+```{r}
+# generate model
+m3.lmer <- update(m1.lmer, .~.+  Batch*Days)
+# extract vifs
+car::vif(m3.lmer)
+# compare models                
+anova(m3.lmer, m1.lmer, test = "Chi")
+```
+This further improves the model, so we should include Batch for a fit
+
+### Inspect models
+
+```{r}
+# inspect results
+summary(m0.lmer)
+summary(m1.lmer)
+summary(m3.lmer)
+```
+### Model diagnostics
+
+
+We can now evaluate the goodness of fit of the model and check if mathematical requirements and assumptions have been violated. In a first step, we generate diagnostic plots that focus on the random effect structure.
+
+#### IDs
+
+```{r,fig.height=20,fig.width=10,unit="cm"}
+plot(m1.lmer, ID ~ resid(.), abline = 0 ) # generate diagnostic plots
+```
+
+#### Batch
+
+```{r,fig.height=20,fig.width=10,unit="cm"}
+plot(m1.lmer, as.factor(Batch) ~ resid(.), abline = 0 ) # generate diagnostic plots
+```
+
+The plot shows that there are some outliers (points outside the boxes) and that the variability within letters is greater than in other genres we therefore examine the genres in isolation standardized residuals versus fitted values (Pinheiro and Bates 2000, 175).
+
+```{r}
+plot(m1.lmer, resid(., type = "pearson") ~ fitted(.) | Batch, id = 0.05, 
+     adj = -0.3, pch = 20, col = "gray40",nrow=1)
+```
+
+The plot shows the standardized residuals (or Pearson’s residuals) versus fitted values and suggests that there are outliers in the data (the names elements in the plots). To check if these outliers are a cause for concern, we will now use a Levene’s test to check if the variance is distributed homogeneously (homoscedasticity) or whether the assumption of variance homogeneity is violated (due to the outliers).
+
+```{r}
+# check homogeneity
+car::leveneTest(prop.dat$Days, prop.dat$ID, center = mean)
+```
+#### Weighted model
+
+```{r}
+library(nlme)
+
+# generate models
+myexp = paste(prop.score,"~ Days")
+m4.lme = lme(as.formula(myexp), random = ~1|ID, data = prop.dat, method = "ML")
+
+m5.lme <- update(m4.lme, weights = varIdent(form = ~ 1 | Batch))
+# compare models
+anova(m5.lme, m4.lme)
+```
+
+The weight model (m5.lme) that uses weights to account for unequal variance is performing significantly better than the model without weights (m4.lme) and we therefore switch to the weight model and inspect its parameters.
+
+```{r}
+# inspect results
+summary(m5.lme)
+
+anova(m5.lme)          
+```
+
+As we did before, we now check, whether the final minimal model (with weights) outperforms an intercept-only base-line model.
+
+```{r}
+# generate base-line model
+myexp = paste(prop.score,"~ 1")
+m0.lme = lme(as.formula(myexp), random = ~1|ID, data = prop.dat, method = "ML", weights = varIdent(form = ~ 1 | Batch))
+
+anova(m0.lme, m5.lme)  # test if date is significant
+```
+
+Our final minimal adequate model with weights performs significantly better than an intercept only base-line model. Before doing the final diagnostics, we well inspect the estimates for the random effect structure to check if there are values which require further inspection (e.g. because they are drastically different from all other values).
+
+```{r}
+# extract estimates and sd for fixed and random effects
+intervals(m5.lme, which="fixed")      
+```
+
+The random effect estimates do not show any outliers or drastically increased or decreased values which means that the random effect structure is fine.
+
+## Effect Sizes
+
+```{r}
+sjPlot::tab_model(m5.lme)
+```
+
+```{r}
+
+# extract R2s
+MuMIn::r.squaredGLMM(m1.lmer)
+```
+
+(not working) The effects can be visualized using the plot_model function from the sjPlot package (Lüdecke 2021).
+
+```{r,eval=F}
+sjPlot::plot_model(m5.lme, type = "pred", terms = c("Days")) +
+  # show uncentered date rather than centered date
+  scale_x_continuous(name = "Days", 
+                     breaks = seq(-500, 300, 100), 
+                     labels = seq(1150, 1950, 100))
+
+sjPlot::plot_model(m5.lme, type = "pred", terms = c("Days"))
+```
+
+While we have already shown that the effect of Days is significant, it is small which means that the number of prepositions per text does not correlate very strongly with time. This suggests that other factors that are not included in the model also impact the frequency of prepositions (and probably more meaningfully, too).
+
+Before turning to the diagnostics, we will use the fitted (or predicted) and the observed values with a regression line for the predicted values. This will not only show how good the model fit the data but also the direction and magnitude of the effect.
+
+```{r,eval=F,warning=F,fig.width=20,fig.height=25,unit="cm"}
+# extract predicted values
+prop.dat$Predicted <- predict(m5.lme, prop.dat)
+# plot predicted values
+ggplot(prop.dat, aes(Days, Predicted)) +
+  facet_wrap(~ID) +
+  geom_point(aes(x = Days, y = prop.score), color = "gray80", size = .5) +
+  geom_smooth(aes(y = Predicted), color = "gray20", linetype = "solid",
+              se = T, method = "lm") +
+  guides(color=guide_legend(override.aes=list(fill=NA))) +  
+  theme_set(theme_bw(base_size = 10)) +
+  theme(legend.position="top", legend.title = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank()) + 
+  xlab("Days")
+```
+
+## Model Diagnostics
+
+We now create diagnostic plots. What we wish to see in the diagnostic plots is a cloud of dots in the middle of the window without any structure. What we do not want to see is a funnel-shaped cloud because this indicates an increase of the errors/residuals with an increase of the predictor(s) (because this would indicate heteroscedasticity) (Pinheiro and Bates 2000, 182).
+
+```{r}
+# start plotting
+par(mfrow = c(2, 2))           # display plots in 2 rows and 2 columns
+plot(m5.lme, pch = 20, col = "black", lty = "dotted"); par(mfrow = c(1, 1))
+```
+
+What a wonderful unstructured cloud - the lack of structure tells us that the model is “healthy” and does not suffer from heteroscedasticity. We will now create more diagnostic plots to find potential problems (Pinheiro and Bates 2000, 21).
+
+```{r,warning=F,fig.width=20,fig.height=25,unit="cm"}
+# fitted values by Genre
+plot(m5.lme, form = resid(., type = "p") ~ fitted(.) | ID, abline = 0, 
+     cex = .5, pch = 20, col = "black")
+```
+
+In contrast to the unweight model, no data points are named which indicates that the outliers do no longer have unwarranted influence on the model. Now, we check the residuals of fitted values against observed values (Pinheiro and Bates 2000, 179). What we would like to see is a straight, upwards going line.
+
+```{r}
+# residuals of fitted values against observed
+qqnorm(m5.lme, pch = 20, col = "black")
+```
+
+A beautiful, straight line! The qqplot does not indicate any problems. It is, unfortunately, rather common that the dots deviate from the straight line at the very bottom or the very top which means that the model is good at estimating values around the middle of the dependent variable but rather bad at estimating lower or higher values. Next, we check the residuals by “Genre” (Pinheiro and Bates 2000, 179).
+
+```{r,warning=F,fig.width=20,fig.height=25,unit="cm"}
+# residuals by genre
+qqnorm(m5.lme, ~resid(.) | ID, pch = 20, col = "black" )
+```
+Beautiful straight lines - perfection! Now, we inspect the observed responses versus the within-group fitted values (Pinheiro and Bates 2000, 178).
+
+```{r}
+# observed responses versus the within-group fitted values
+myexp = paste(prop.score,"~ fitted(.)")
+plot(m5.lme, as.formula(myexp), id = 0.05, adj = -0.3, 
+      cex = .8, pch = 20, col = "blue")
+```
+
+Although some data points are named, the plot does not show any structure, like a funnel, which would have been problematic.
+
+## Reporting Results
+
+Before we do the write-up, we have a look at the model summary as this will provide us with at least some of the parameters that we want to report.
+
+```{r}
+summary(m5.lme)
+```
+
+```{r}
+sjPlot::tab_model(m5.lme)
+```
+
+```{r}
+MuMIn::r.squaredGLMM(m0.lmer)
+
+MuMIn::r.squaredGLMM(m1.lmer)
+
+#uMIn::r.squaredGLMM(m2.lmer)
+
+MuMIn::r.squaredGLMM(m3.lmer)
+
+MuMIn::r.squaredGLMM(m4.lme)
+
+MuMIn::r.squaredGLMM(m5.lme)
+```
+
+(Does not work for factors) We can use the reports package (Makowski et al. 2021) to summarize the analysis.
+
+```{r,eval=F}
+report::report(m5.lme)
+```
+
+# Save results
+
+```{r}
+dir.create(here::here("results","RData","5.2_Age_propensity_glm_models"))
+
+saveRDS(prop.dat.all,
+        here::here("results","RData","5.2_Age_propensity_glm_models","prop.dat.glm.RDS"))
+```
+
+# Model for infant faecal microbiome maturity
+
+
+```{r}
+prop.dat.all <- readRDS(here::here("results","RData","5.2_Age_propensity_glm_models","prop.dat.glm.RDS"))
+
+prop.df <- prop.dat.all %>% 
+   filter(!is.na(.data[["faec.bac.z"]])) %>% 
+   filter(!is.na(.data[["milk.bac.z"]])) %>% 
+   filter(!is.na(.data[["milk.metab.z"]])) %>%
+  dplyr::mutate(Days = factor(Days))
+```
+
+## z-score scatterplots
+
+```{r}
+df <- prop.dat.all %>%
+  dplyr::mutate(Days = factor(Days))
+
+prop.plot.milk.bac.faec.bac.days <- ggplot(df, aes(x=milk.bac.z, y=faec.bac.z,color=Days)) + 
+  geom_smooth(method=lm) +
+  geom_point()+
+  scale_color_manual(values=rep(col_fil,5),name="Days of life") +
+  ggtitle("Milk bacteria vs faecal bacteria") +
+  stat_cor(method = "pearson")
+
+prop.plot.milk.bac.milk.metab.days <- ggplot(df, aes(x=milk.bac.z, y=milk.metab.z,color=Days)) + 
+  geom_point()+
+  stat_smooth(method=lm) +
+  scale_color_manual(values=rep(col_fil,5),name="Days of life") +
+  ggtitle("Milk bacteria vs milk metabolites") +
+  stat_cor(method = "pearson")
+
+prop.plot.faec.bac.milk.metab.days <- ggplot(df, aes(x=faec.bac.z, y=milk.metab.z,color=Days)) + 
+  geom_point()+
+  stat_smooth(method=lm) +
+  scale_color_manual(values=rep(col_fil,5),name="Days of life") +
+  ggtitle("Faecal bacteria vs milk metabolites") +
+  stat_cor(method = "pearson")
+
+ggarrange(prop.plot.milk.bac.faec.bac.days,
+          prop.plot.milk.bac.milk.metab.days,
+          prop.plot.faec.bac.milk.metab.days,
+          nrow=1,
+          common.legend = TRUE,legend="bottom")
+```
+
+### Testing random effects
+
+```{r}
+
+prop.score <- "milk.bac.z"
+
+
+myexp = paste(prop.score, "~ 1")
+m0.glm <- glm(as.formula(myexp), family = gaussian, data = prop.df)
+
+summary(m0.glm)
+
+library(lme4)
+
+myexp.rand = paste(prop.score, "~ 1","+ (1|ID)")
+
+m0.lmer = lme4::lmer(as.formula(myexp.rand),
+                     REML = T,
+                     data = prop.df)
+summary(m0.lmer)
+
+AIC(logLik(m0.glm))
+
+AIC(logLik(m0.lmer))
+
+```
+
+Since we both milk bacteria and metabolome-age-z-scores are continuous, we will use the simple random effects model for the random effect of each mother-infant dyad.
+
+```{r}
+
+
+# generate models with 2 different random effect structures
+myexp = paste(prop.score, "~ milk.metab.z","+ (1|ID)")
+ma.lmer = lmer(as.formula(myexp), REML = T, data = prop.df)
+
+summary(ma.lmer)
+
+# myexp = paste(prop.score, "~  milk.bac.z","+ (1 +  milk.bac.z | ID)")
+# mb.lmer = lmer(as.formula(myexp), REML = T, data = prop.df)
+```
+
+## Model fitting
+
+
+```{r}
+myexp = paste(prop.score,"~ milk.metab.z",
+              "+Days",
+              #"+milk.metab.z",
+              "+ (1|ID)")
+
+
+m1.lmer <- lmer(as.formula(myexp), REML = T, data = prop.df)
+
+summary(m0.lmer)
+summary(m1.lmer)
+
+anova(m1.lmer, m0.lmer, test = "Chi")
+
+#Test random effects 
+library(lmerTest)
+
+ranova(m1.lmer)
+```
+
+Compare to simple linear model
+
+```{r}
+myexp = paste(prop.score,"~ milk.metab.z")
+
+m1.glm <- glm(as.formula(myexp), data = prop.df)
+
+anova(m1.lmer, m1.glm , test = "Chi")
+```
+
+#### Comparing milk metabolome and milk microbiome models
+
+
+```{r , eval = F}
+# generate model
+m2.lmer <- update(m1.lmer, .~. + milk.metab.z + faec.bac.z)
+# test vifs
+car::vif(m2.lmer)
+#compare models                
+anova(m2.lmer, m1.lmer, test = "Chi")
+```
+We see a modest increase in AIC and p-value, so the model does improve by including Batch
+
+
+
+```{r , eval = F}
+# generate model
+m2.lmer <- update(m1.lmer, .~. + milk.metab.z + faec.bac.z + Days)
+# test vifs
+car::vif(m2.lmer)
+         
+summary(m2.lmer)
+                  
+#compare models                
+anova(m2.lmer, m1.lmer, test = "Chi")
+
+```
+
+Finally we fit a model with Batch and Days as an interaction
+
+# SessionInfo
+
+```{r}
+sessionInfo()
+```

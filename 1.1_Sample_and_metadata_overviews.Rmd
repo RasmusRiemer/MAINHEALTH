@@ -1,0 +1,500 @@
+---
+title: "1.1_Sample_and_metadata_overviews"
+author: "Rasmus Riemer Jakobsen"
+date: "`r Sys.time()`"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+link-citations: yes
+---
+
+```{r setup, include=F, message=F}
+#Set working directory to script directory
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+
+dir.create("results", showWarnings = FALSE, recursive = TRUE)
+
+source("Supplementary_scripts/package_load_install.R")
+
+#source("Phyloseq_import_CSS_16S_laca.R")
+load("0.3_deduplicated_and_decontaminated.RData")
+source(here::here("Supplementary_scripts","utils.R"))
+
+theme_set(theme_classic())
+
+# knitr::opts_chunk$set(fig.width=12, fig.height=8, fig.fullwidth = TRUE,
+#                       root.dir = setwd(dirname(rstudioapi::getActiveDocumentContext()$path))) #Set working directory to script directory 
+
+#Coulour pallettes
+#col_fil <- pal_jco("default")(10)
+
+#col_scale <- scale_color_jco()
+```
+
+# Load data
+
+```{r}
+################### Metabolome
+effect.size.variables.metab <- append(c("RCID","ID","BMI.group"),effect.size.variables[-c(1:2)])
+
+df.id <- readr::read_tsv("Data/metabolome_milk.txt")
+meta <- readr::read_tsv("Data/metadata_metabome_milk.txt")
+metab.class <- readr::read_tsv("Data/metabolite_categories.txt")
+
+#Remove sample 383_2 - possible error?
+df.id <- df.id %>%
+  filter(RCID != "383_2")
+meta <- meta %>%
+  filter(RCID != "383_2")
+
+#Check if dataframes match
+setdiff(df.id$RCID,meta$RCID)
+
+
+df <- df.id %>% dplyr::select(-RCID) 
+
+```
+
+## Set classes and recode variables
+
+```{r}
+
+# Set columns to factor
+meta <- meta %>%
+  dplyr::mutate(across(c("BMI.group","Days","Siblings", "Infant.sex","GDM", "C.section", "AB.mother", "AB.infant", "Breast.infection", "Breastfeeding.issues", "Secretor", "Lewis"),
+    as.factor))
+
+meta.sel <- dplyr::select(meta,all_of(effect.size.variables.metab))
+meta.sel$Sample.type <- "Milk metabolites"
+  
+################### Microbiome
+meta.bac <- data.frame(sample_data(PSB)) %>%
+   dplyr::filter(Sample.type %in% c("Milk", "Faecal sample")) %>%
+   dplyr::select(append("Sample.type",effect.size.variables.metab))
+
+################## Combine dataframes
+
+meta.comb<-rbind(meta.sel,meta.bac) %>% 
+  dplyr::mutate(across(c("BMI.group","Days","Siblings", "GDM", "C.section", "AB.mother", "AB.infant", "Breast.infection", "Breastfeeding.issues", "Secretor", "Lewis"),
+    as.factor)) %>% 
+  dplyr::rename(`Sample type` = Sample.type)
+
+### Set order of varibles
+
+order<- c("Sample type",
+  "ID",
+  "Days",
+  "ppBMI",
+  "BMI.group",
+  "Maternal.age",
+  "GDM",
+  "Siblings",
+  "C.section",
+  "Infant.sex",
+  "Gestational.age",
+  "Birth.weight",
+  "Secretor",
+  "Lewis",
+  "AB.mother",
+  "AB.infant",
+  "Breast.infection",
+  "Breastfeeding.issues",
+  "BMI.delta.3m",
+  "delta.haz",
+  "delta.waz",
+  "delta.whz"
+)
+  
+meta.comb <- meta.comb[, order]
+
+### Format variable names
+colnames(meta.comb) <- str_replace_all(colnames(meta.comb), c(`BMI.delta`="delta BMI",
+                                                              `Days` = "Days after birth",
+                                                              delta="Δ",
+                                                              `3m`="3 months ",
+                                                              `Maternal.age` = "Maternal age (years)",
+                                                              `ppBMI` = "BMI (cm²/kg)",
+                                                              `BMI (cm²/kg) group` = "BMI group",
+                                                              `Gestational.age` = "Gestational age (Days)",
+                                                              `Birth.weight` = "Birth weight (kg)",
+                                                              waz = "WAZ",
+                                                              whz = "WHZ",
+                                                              haz = "HAZ",
+                                                              AB="Antibiotics",
+                                                              GDM="Gestational diabetes",
+                                                              Secretor="Secretor status",
+                                                              Lewis="Lewis status",
+                                                              C.section="Birth mode",
+                                                              # `(cm²/kg).3 months`="3 months (cm²/kg)",
+                                                              "\\."=" ")
+                )
+
+colnames(meta.comb)
+
+### Recode variable values
+
+meta.comb <- meta.comb %>%
+  dplyr::mutate(
+    `Siblings` = case_when(
+      `Siblings` == 1 ~ "Yes",
+      `Siblings` == 0 ~ "No",
+      `Siblings` == 3 ~ NA_character_,
+      TRUE ~ `Siblings`
+    ),
+    `Antibiotics mother` = case_when(
+      `Antibiotics mother` == 1 ~ "Yes",
+      `Antibiotics mother` == 0 ~ "No",
+      `Antibiotics mother` == 3 ~ NA_character_,
+      TRUE ~ `Antibiotics mother`
+    ),
+    `Antibiotics infant` = case_when(
+      `Antibiotics infant` == 1 ~ "Yes",
+      `Antibiotics infant` == 0 ~ "No",
+      `Antibiotics infant` == 3 ~ NA_character_,
+      TRUE ~ `Antibiotics infant`
+    ),
+    `Infant sex` = case_when(
+      `Infant sex` == 1 ~ "Male",
+      `Infant sex` == 2 ~ "Female",
+      `Infant sex` == 3 ~ NA_character_,
+      TRUE ~ `Infant sex`
+    ),
+    `Breast infection` = case_when(
+      `Breast infection` == 1 ~ "Yes",
+      `Breast infection` == 2 ~ "No",
+      `Breast infection` == 3 ~ NA_character_,
+      TRUE ~ `Breast infection`
+    ),
+    `Gestational diabetes` = case_when(
+      `Gestational diabetes` == 1 ~ "Yes",
+      `Gestational diabetes` == 0 ~ "No",
+      TRUE ~ `Gestational diabetes`
+    ),
+    `Breastfeeding issues` = case_when(
+      `Breastfeeding issues` == 1 ~ "Yes",
+      `Breastfeeding issues` == 2 ~ "No",
+      `Breastfeeding issues` == 3 ~ "No breastfeeding",
+      TRUE ~ `Breastfeeding issues`
+    ),
+    `Lewis status` = case_when(
+      `Lewis status` == 1 ~ "Lewis positive",
+      `Lewis status` == 0 ~ "Lewis negative",
+      TRUE ~ `Lewis status`
+    ),
+    `Secretor status` = case_when(
+      `Secretor status` == 1 ~ "Secretor",
+      `Secretor status` == 0 ~ "Non-secretor",
+      TRUE ~ `Secretor status`
+    ),
+    `Birth mode` = case_when(
+      `Birth mode` == 1 ~ "C-section",
+      `Birth mode` == 0 ~ "Vaginal",
+      TRUE ~ `Birth mode`
+    )
+  )
+
+
+#Recode variables order
+meta.comb$`BMI group` <- factor(meta.comb$`BMI group`, levels = c("Normal", "Overweight", "Obese"))
+
+str(meta.comb)
+```
+
+## Metadata statistics
+
+### Sample overview
+
+#### Combined
+
+```{r}
+library(vtable)
+library(kableExtra)
+
+table<- st(meta.comb,#dplyr::filter(meta.comb,`Sample type` == "Milk metabolites"),
+   out = "return",
+   group = 'Days after birth',
+   group.test = TRUE,
+   #summ = c('mean(x)','sd(x)'),
+   )
+
+# table<- st(dplyr::filter(meta.comb,`Days after birth` == 3),
+#    out = "return",
+#    group = 'Sample type',
+#    group.test = TRUE,
+#    #summ = c('mean(x)','sd(x)'),
+#    )
+
+
+#table$Test <- gsub("X2", "χ²", table$Test)
+
+indent_vector <-  grep("\\.\\.\\.", table$Variable)
+table$Variable <- gsub("\\.{3}", "", table$Variable) #use indents instead for alignment
+
+
+table %>%
+   knitr::kable("html") %>%
+    add_indent(indent_vector) %>% # Add indents for all subgroups
+     kable_styling(htmltable_class="lightable-classic") #%>%
+#   row_spec(1, background = "lightgrey") %>%
+#     save_kable("results/metadata_summary_all.html", density = 400)
+# webshot::webshot("results/metadata_summary_all.html", "results/metadata_summary_all.pdf")
+# webshot::webshot("results/metadata_summary_all.html", "results/metadata_summary_all.png")
+```
+
+#### Summary Per ID
+
+```{r}
+library(vtable)
+library(kableExtra)
+
+meta.id <- meta.comb %>% dplyr::filter(`Sample type` == "Milk metabolites") %>%
+dplyr::select(1:which(colnames(.) == "Lewis status")) %>%
+  distinct(ID, .keep_all = TRUE) %>%
+  dplyr::select(-c("Sample type","ID","Days after birth"))
+
+table <- st(meta.id,
+   out = "return",
+   #group = 'Days after birth',
+   group.test = TRUE,
+   #summ = c('mean(x)','sd(x)'),
+   ) %>%
+  dplyr::rename(n=N) %>%
+  mutate(`Std. Dev.` = na_if(`Std. Dev.`, "")) %>%
+  mutate(Mean = ifelse(
+    !is.na(`Std. Dev.`),
+    paste(Mean, `Std. Dev.`, sep = " ± "),
+    as.character(Mean)
+  )) %>%
+  dplyr::select(-"Std. Dev.")
+
+table  
+
+#table$Test <- gsub("X2", "χ²", table$Test)
+
+indent_vector <-  grep("\\.\\.\\.", table$Variable)
+table$Variable <- gsub("\\.{3}", "", table$Variable) #use indents instead for alignment
+
+
+table %>%
+   knitr::kable("html") %>%
+    add_indent(indent_vector) %>% # Add indents for all subgroups
+    kable_styling(htmltable_class="lightable-classic") %>%
+  #row_spec(1, background = "lightgrey") %>%
+    save_kable("results/metadata_summary.html", density = 400)
+webshot::webshot("results/metadata_summary.html", "results/metadata_summary.pdf")
+webshot::webshot("results/metadata_summary.html", "results/metadata_summary.png")
+```
+
+#### Export xlsx
+
+```{r}
+library(expss)
+library(openxlsx)
+
+wb = createWorkbook()
+sh = addWorksheet(wb, "Tables")
+
+#Export - we should specify workbook and worksheet.
+
+xl_write(table, wb, sh)
+
+#And, finally, we save workbook with table to the xlsx file.
+
+
+saveWorkbook(wb, "results/metadata_summary.xlsx", overwrite = TRUE)
+
+```
+
+### Timepoint
+
+```{r}
+library(vtable)
+library(kableExtra)
+
+meta.comb.filt <- dplyr::filter(meta.comb,`Sample type` == "Milk metabolites") %>%
+  dplyr::select(-c("Sample type","ID"))
+
+table<- st(meta.comb.filt,
+   out = "return",
+   group = 'Days after birth',
+   group.test = TRUE,
+   #summ = c('mean(x)','sd(x)'),
+   )
+
+table$Test <- gsub("X2", "χ²", table$Test)
+
+indent_vector <-  grep("\\.\\.\\.", table$Variable)
+table$Variable <- gsub("\\.{3}", "", table$Variable) #use indents instead for alignment
+
+
+table %>%
+   knitr::kable("html") %>%
+    add_indent(indent_vector) %>% # Add indents for all subgroups
+    kable_styling(htmltable_class="lightable-classic") %>%
+  row_spec(1, background = "lightgrey") %>%
+    save_kable("results/metadata_summary_days.html", density = 400)
+webshot::webshot("results/metadata_summary_days.html", "results/metadata_summary_days.pdf")
+webshot::webshot("results/metadata_summary_days.html", "results/metadata_summary_days.png")
+```
+
+#### Export xlsx
+
+```{r}
+library(expss)
+library(openxlsx)
+
+wb = createWorkbook()
+sh = addWorksheet(wb, "Tables")
+
+#Export - we should specify workbook and worksheet.
+
+xl_write(table, wb, sh)
+
+#And, finally, we save workbook with table to the xlsx file.
+
+
+saveWorkbook(wb, "results/metadata_summary_days.xlsx", overwrite = TRUE)
+
+```
+
+### Sample types comparison
+
+```{r}
+library(vtable)
+library(kableExtra)
+
+table<- st(meta.comb,
+   out = "return",
+   group = 'Sample type',
+   group.test = TRUE,
+   #summ = c('mean(x)','sd(x)'),
+   )
+
+table$Test <- gsub("X2", "χ²", table$Test)
+
+indent_vector <-  grep("\\.\\.\\.", table$Variable)
+table$Variable <- gsub("\\.{3}", "", table$Variable) #use indents instead for alignment
+
+
+table %>%
+   knitr::kable("html") %>%
+    add_indent(indent_vector) %>% # Add indents for all subgroups
+    kable_styling(htmltable_class="lightable-classic") %>%
+  row_spec(1, background = "lightgrey") %>%
+    save_kable("results/metadata_grouped.html", density = 400)
+webshot::webshot("results/metadata_grouped.html", "results/metadata_grouped.pdf")
+webshot::webshot("results/metadata_grouped.html", "results/metadata_grouped.png")
+```
+
+```{r}
+
+```
+
+### Timepoints/ID per sample types
+
+```{r}
+summary.df <- meta.comb %>%
+  group_by(`Sample type`, `Days after birth`) %>%
+  summarise(Samples = n_distinct(ID))
+
+summary.df
+
+summary.Days <- meta.comb %>%
+  group_by(`Days after birth`) %>%
+  summarise(UniqueTimepoints = n_distinct(ID))
+
+summary.Days
+
+summary.id <- meta.comb %>%
+  group_by(`Sample type`,ID) %>%
+  summarise(`Timepoints per ID` = n_distinct(`Days after birth`)) %>%
+  group_by(`Sample type`) %>%
+  dplyr::count(`Timepoints per ID`) %>%
+   knitr::kable("html") %>%
+    kable_styling(htmltable_class="lightable-classic") %>%
+    row_spec(c(3,7,11), background = "lightgrey") %>%
+    save_kable("results/metadata_timepoints.html", density = 400,vwidth=300,vheight = 300)
+webshot::webshot("results/metadata_timepoints.html", "results/metadata_timepoints.pdf",vwidth=300,vheight = 300)
+webshot::webshot("results/metadata_timepoints.html", "results/metadata_timepoints.png",vwidth=300,vheight = 300)
+```
+
+
+### BMI
+
+### Timepoint
+
+```{r,eval = F}
+library(vtable)
+library(kableExtra)
+
+meta.comb.filt <- dplyr::filter(meta.comb,`Sample type` == "Milk metabolites") %>%
+  dplyr::select(.,-c("Sample type","ID","Days after birth"))
+
+table<- st(meta.comb.filt,
+   out = "return",
+   group = 'BMI group',
+   group.test = TRUE,
+   #summ = c('mean(x)','sd(x)'),
+   )
+
+table$Test <- gsub("X2", "χ²", table$Test)
+
+indent_vector <-  grep("\\.\\.\\.", table$Variable)
+table$Variable <- gsub("\\.{3}", "", table$Variable) #use indents instead for alignment
+
+
+table %>%
+   knitr::kable("html") %>%
+    add_indent(indent_vector) %>% # Add indents for all subgroups
+    kable_styling(htmltable_class="lightable-classic") %>%
+  row_spec(1, background = "lightgrey") %>%
+    save_kable("results/metadata_summary_days.html", density = 400)
+webshot::webshot("results/metadata_summary_days.html", "results/metadata_summary_days.pdf")
+webshot::webshot("results/metadata_summary_days.html", "results/metadata_summary_days.png")
+```
+
+#### Export xlsx
+
+```{r}
+library(expss)
+library(openxlsx)
+
+wb = createWorkbook()
+sh = addWorksheet(wb, "Tables")
+
+#Export - we should specify workbook and worksheet.
+
+xl_write(table, wb, sh)
+
+#And, finally, we save workbook with table to the xlsx file.
+
+
+saveWorkbook(wb, "results/metadata_summary_bmi.xlsx", overwrite = TRUE)
+
+```
+
+## Missing data export
+
+```{r}
+library(vtable)
+library(kableExtra)
+
+meta.na <- meta.comb %>% #dplyr::filter(meta.comb,`Sample type` == "Milk metabolites") %>%
+  dplyr::select(-matches("Δ")) %>%
+  dplyr::select(-c(`Antibiotics infant`)) %>%
+  distinct(ID, .keep_all = TRUE) %>% #%>% dplyr::select(-c("Sample type","ID","Days after birth"))
+  filter(rowSums(is.na(.)) > 0) 
+
+write_tsv(meta.na,"results/MH_missing_metadata.tsv")
+
+```
+
+
+## Sample statistics
+
+# SessionInfo
+
+```{r}
+sessionInfo()
+```

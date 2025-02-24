@@ -1,0 +1,1928 @@
+---
+title: "5.1_Metabolome_microbiome_relations"
+author: "Rasmus Riemer Jakobsen"
+date: "`r Sys.time()`"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+link-citations: yes
+---
+
+```{r setup, include=F, message=F, warning=F}
+subdir_name <- "5.1_Metabolome_microbiome_relations"
+
+#Load packages
+source("Supplementary_scripts/package_load_install.R")
+#Load utility functions
+source("Supplementary_scripts/utils.R")
+
+dir.create("results", showWarnings = FALSE, recursive = TRUE)
+
+# Set theme and colort
+
+theme_set(theme_classic())
+
+knitr::opts_chunk$set(fig.width=12, fig.height=8, fig.fullwidth = TRUE)
+
+
+```
+
+```{r}
+source(here::here("Supplementary_scripts","package_load_install.R")) 
+source(here::here("Supplementary_scripts","utils.R")) # please see the src-folder for some custom functions used in 
+#source(here::here("src", "run_clusterprofiler.R"))
+```
+
+```{r knit, echo=F, eval=FALSE}
+#Run to generate
+rmarkdown::render(
+  input = here::here(str_c(subdir_name, ".Rmd")),
+  output_dir = here::here("results", "reports")
+)
+```
+
+# Load data
+
+```{r}
+#Microbiome
+load("0.3_deduplicated_and_decontaminated.RData")
+
+#Metabolome
+metab.id <- readr::read_tsv("Data/metabolome_milk.txt")
+meta <- readr::read_tsv("Data/metadata_metabome_milk.txt")
+
+## Check if dataframes match
+setdiff(metab.id$RCID,meta$RCID)
+
+metab <- metab.id %>% dplyr::select(-RCID) 
+
+log.metab <- 
+  log10(metab+1) 
+
+# Set key metadata columns to factor
+meta <- meta %>%
+  mutate_at(
+    c("Days","Siblings", "GDM", "Induction", "AB.mother", "AB.infant", "Breast.infection", "Breastfeeding.issues", "Secretor", "Lewis"),
+    as.factor)
+```
+
+
+# Combined effect size plots
+
+## Import permanova results
+
+```{r}
+load(file="results/effect_size_milk_metab.RData")
+
+load(file="results/effect_size_bac_milk_faeces.RData")
+```
+
+## Combine matrices
+
+```{r}
+anova.melt.metab.milk.time$Component <- "Milk metabolites"
+anova.melt.comb$Variable.clean <- gsub("\\."," ",anova.melt.comb$Variable)
+anova.melt.metab.milk.time$Variable.clean <- gsub("\\."," ",anova.melt.metab.milk.time$Variable)
+
+anova.melt.comb <- rbind(anova.melt.metab.milk.time,anova.melt.comb)
+
+anova.melt.comb <- anova.melt.comb %>% 
+  filter(!str_detect(Variable, "DNA.conc")) #Remove DNA conc as it only pertains to 16S data
+```
+
+
+## Combined plot
+
+### Non-scaled
+
+```{r}
+library(ggbreak) 
+
+anova.ordered <- anova.melt.comb %>% 
+    mutate(Variable.clean.comp = tidytext::reorder_within(Variable.clean, value, within = Component)) %>%
+    mutate(Variable.clean = str_remove(forcats::fct_inorder(Variable.clean.comp), "__.*")) %>%
+    mutate(Variable.clean = str_replace_all(Variable.clean, c(`BMI delta`="delta BMI",
+                                                              ppBMI = "Pre-pregnancy BMI",
+                                                              delta="Δ",
+                                                              `3m`="3 months",
+                                                              waz = "WAZ",
+                                                              whz = "WHZ",
+                                                              haz = "HAZ",
+                                                              AB="Antibiotics",
+                                                              GDM="Gestational diabetes",
+                                                              Secretor="Secretor status",
+                                                              Lewis="Lewis status",
+                                                              `C section`="C-section"))
+           )
+
+
+
+#anova.ordered$Variable.clean
+
+anova.ordered <- anova.ordered %>%
+  mutate(Category = case_when(
+    Variable.clean == "Antibiotics infant" ~ "Antibiotics",
+    Variable.clean == "Gestational diabetes" ~ "Maternal",
+    Variable.clean == "Infant sex" ~ "Infant",
+    Variable.clean == "Breast infection" ~ "Breastfeeding",
+    Variable.clean == "Breastfeeding issues" ~ "Breastfeeding",
+    Variable.clean == "Maternal age" ~ "Maternal",
+    Variable.clean == "Siblings" ~ "Maternal",
+    Variable.clean == "Antibiotics mother" ~ "Antibiotics",
+    Variable.clean == "Birth weight" ~ "Infant",
+    Variable.clean == "Induction" ~ "Maternal",
+    Variable.clean == "Pre-pregnancy BMI" ~ "Maternal",
+    Variable.clean == "Δ BMI 3 months" ~ "Maternal",
+    Variable.clean == "Δ WHZ" ~ "Infant",
+    Variable.clean == "Gestational age" ~ "Infant",
+    Variable.clean == "Δ WAZ" ~ "Infant",
+    Variable.clean == "Δ HAZ" ~ "Infant",
+    Variable.clean == "Lewis status" ~ "Genetic",
+    Variable.clean == "Secretor status" ~ "Genetic",
+    Variable.clean == "C-section" ~ "Birth mode",
+    TRUE ~ NA_character_  # For any values not specified above
+  ))
+
+# Add categories
+
+
+
+anova.milk.metab <- subset(anova.ordered,Component=="Milk metabolites")
+anova.milk.bac <- subset(anova.ordered,Component=="Milk bacteria")
+anova.faec.bac <- subset(anova.ordered,Component=="Faecal bacteria")
+
+y.lab <- expression(R^2~value)
+
+p.milk.metab <- ggbarplot(anova.milk.metab,
+                                         x="Variable.clean",
+                                         y="value",
+                                         ylab = FALSE,
+                                         fill = "Category",
+                                         orientation = c("horizontal"),
+                                         #fill = "measure",
+                                         position=position_dodge(0.7),
+                                         label = anova.milk.metab$PrF.sym,
+                                         lab.size = 9,
+                                         lab.vjust = 0.8,
+                                         lab.hjust = -0.3
+) +
+  scale_fill_manual(values=col_fil)  +
+  theme(legend.position = "none",
+        axis.text.x.top = element_blank(),
+        axis.line.x.top = element_blank(),
+        axis.ticks.x.top = element_blank(),
+        axis.text.y = element_text(angle = 35, vjust = 0.5, hjust=1)
+        ) +
+  #scale_y_break(c(0.1,0.43),expand=FALSE) +
+  #scale_y_continuous(limits=c(0,0.45),breaks=c(0.025,0.05,0.075,0.44))
+  scale_y_continuous(expand = expansion(mult = c(0, 0.2))) +
+  ggtitle("Milk metabolites")+
+  labs(y=y.lab)
+
+p.milk.metab                    
+
+p.milk.bac <- ggbarplot(anova.milk.bac,
+                                         x="Variable.clean",
+                                         y="value",
+                                         ylab = FALSE,
+                                         fill = "Category",
+                                         orientation = c("horizontal"),
+                                         #fill = "measure",
+                                         position=position_dodge(0.7),
+                                         label = anova.milk.bac$PrF.sym,
+                                         lab.size = 9,
+                                         lab.vjust = 0.8,
+                                         lab.hjust = -0.3
+) +
+  scale_fill_manual(values=col_fil) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.275))) +
+  theme(legend.position = "none",
+        axis.text.y = element_text(angle = 35, vjust = 0.5, hjust=1)) +
+  ggtitle("Milk bacteria")+
+  labs(y=y.lab)
+
+
+
+p.faec.bac <- ggbarplot(anova.faec.bac,
+                                         x="Variable.clean",
+                                         y="value",
+                                         ylab = FALSE,
+                                         fill = "Category",
+                                         orientation = c("horizontal"),
+                                         #fill = "measure",
+                                         position=position_dodge(0.7),
+                                         label = anova.milk.bac$PrF.sym,
+                                         lab.size = 9,
+                                         lab.vjust = 0.8,
+                                         lab.hjust = -0.3
+) +
+  scale_fill_manual(values=col_fil) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.35))) +
+  theme(legend.position = "none",
+        axis.text.y = element_text(angle = 35, vjust = 0.5, hjust=1)) +
+  ggtitle("Infant faecal bacteria")+
+  labs(y=y.lab)
+
+
+sl(esize.bac.metab,
+   list(p.milk.metab+theme(plot.margin = unit(c(0,0,0.5,0.2), "cm")),
+        p.milk.bac+theme(plot.margin = unit(c(0,0,0.5,0.1), "cm")),
+        p.faec.bac+theme(plot.margin = unit(c(0,0,0.5,0.1), "cm"))
+        ),
+   overwrite = TRUE)
+
+esize.bac.metab
+
+```
+
+
+### With Breaks
+
+```{r}
+library(ggbreak) 
+
+
+esize.bac.metab.breaks <- ggbarplot(anova.melt.comb,
+                                         x="Variable.clean",
+                                         y="value",
+                                        ylab = FALSE,
+                                         fill = "Component",
+                                         orientation = c("horizontal"),
+                                         #fill = "measure",
+                                         position=position_dodge(0.7),
+                                         label = anova.melt.comb$PrF.sym,
+                                         lab.size = 9,
+                                         lab.vjust = 0.8,
+                                         lab.hjust = -0.3
+                                         
+) +
+  scale_y_break(c(0.022,0.063), ticklabels=c(0.065,0.07)) +
+  scale_y_break(c(0.075,0.43), ticklabels=c(0.43,0.44)) +
+  #scale_y_continuous(trans = log_trans()) +
+  ylab(expression(R^2~"value")) +
+  scale_fill_jco()
+
+esize.bac.metab.breaks
+```
+
+# PROCrustes comparison matrix correlation quantifications
+
+## Subset samples found in both matrices
+
+```{r}
+# test <- data.frame(sample_data(PSB.CSS)) %>%
+#   as.data.frame() %>% dplyr::arrange(Sample.type,RCID)
+# 
+# test$RCID
+# meta$RCID
+
+#Bacteria
+PSB.CSS.milk <- subset_samples(PSB.CSS, Sample.type == "Milk") 
+PSB.CSS.faeces <- subset_samples(PSB.CSS, Sample.type == "Faecal sample")
+
+
+colnames(PSB.CSS.milk@otu_table)
+
+
+
+PSB.CSS.milk.both.bac <- subset_samples(PSB.CSS.milk, RCID %in% PSB.CSS.faeces@sam_data$RCID)
+PSB.CSS.milk.both.bac
+PSB.CSS.milk.both.metab <- subset_samples(PSB.CSS.milk, RCID %in% meta$RCID)
+PSB.CSS.milk.both.metab
+
+PSB.CSS.faeces.both.bac <- subset_samples(PSB.CSS.faeces, RCID %in% PSB.CSS.milk@sam_data$RCID)
+PSB.CSS.faeces.both.bac
+PSB.CSS.faeces.both.metab <- subset_samples(PSB.CSS.faeces, RCID %in% meta$RCID)
+PSB.CSS.faeces.both.metab
+
+##Samples present in all three matrices
+PSB.CSS.milk.all <- subset_samples(PSB.CSS.milk.both.bac, RCID %in% meta$RCID)
+PSB.CSS.milk.all
+PSB.CSS.faeces.all <- subset_samples(PSB.CSS.faeces.both.bac, RCID %in% meta$RCID)
+PSB.CSS.faeces.all
+
+#Metabolome
+df.milk <- metab[which(meta$RCID %in% PSB.CSS.milk.both.metab@sam_data$RCID),]
+df.faeces <- metab[which(meta$RCID %in% PSB.CSS.faeces.both.metab@sam_data$RCID),]
+df.both <- metab[which(meta$RCID %in% PSB.CSS.milk.all@sam_data$RCID),]
+str(df.both)
+
+
+## Check if dataframes match
+PSB.CSS.milk@sam_data$RCID
+meta$RCID
+setdiff(df.both$RCID,PSB.CSS.milk.all@sam_data$RCID)
+```
+
+
+## PCoAs
+
+```{r}
+get_pcoa <- function(ps="PSB.CSS"){
+otu <- data.frame(ps@otu_table) %>% t()
+bray <- vegan::vegdist(otu, method = "bray")
+add <-  !(ade4::is.euclid(bray))
+pcoa <- cmdscale(bray, k = nrow(otu)-1, eig = TRUE, add = add)
+return(pcoa)
+}
+
+get_pca <- function(df="PSB.CSS"){
+otu <- log10(df+1)
+bray <- vegan::vegdist(otu, method = "euclidian")
+#add <-  !(ade4::is.euclid(bray))
+pca <- cmdscale(bray, k = nrow(otu)-1, eig = TRUE
+                #, add = add
+                )
+return(pca)
+}
+
+
+
+pcoa.bac <- get_pcoa(PSB.CSS)
+vegan::ordiplot(pcoa.bac, type = "text", main = "PCoA for Bacteria Data, Bray Distances")
+
+
+pca.metab <- get_pca(df.both)
+vegan::ordiplot(pca.metab, type = "text", main = "PCA for milk metabolome")
+```
+
+## Procrustes
+
+### All samples
+
+```{r, warning = F}
+#All time points
+pcoa.milk <- PSB.CSS.milk.both.bac %>% get_pcoa()
+pcoa.faeces <- PSB.CSS.faeces.both.bac %>% get_pcoa()
+
+sl(procrustes.test.bac,vegan::protest(X = pcoa.milk, Y = pcoa.faeces, scores = "sites", symmetric = T, permutations = 999), overwrite = FALSE)
+
+# procrustes.test.bac
+
+#Only samples in all datasets
+
+pcoa.milk.all <- PSB.CSS.milk.all %>% get_pcoa()
+pcoa.faeces.all <- PSB.CSS.faeces.all %>% get_pcoa()
+
+sl(procrustes.test.bac.sub,vegan::protest(X = pcoa.milk.all, Y = pcoa.faeces.all, scores = "sites", symmetric = T, permutations = 999), overwrite = FALSE)
+
+# procrustes.test.bac.sub
+
+# Milk vs milk metabolites
+
+## All samples found in bac and metab data
+
+pcoa.milk <- PSB.CSS.milk.both.metab %>% get_pcoa()
+pca.milk <- df.milk %>% get_pca()
+
+sl(procrustes.test.milk,vegan::protest(X = pcoa.milk, Y = pca.milk, scores = "sites", symmetric = T, permutations = 999), overwrite = FALSE)
+
+# procrustes.test.milk
+
+## Samples with all 3 data types
+
+pca.all <- df.both %>% get_pca()
+
+sl(procrustes.test.milk.sub,vegan::protest(X = pcoa.milk.all, Y = pca.all, scores = "sites", symmetric = T, permutations = 999), overwrite = FALSE)
+
+# procrustes.test.milk.sub
+
+# Faeces vs milk metabolites
+
+pcoa.faeces <- PSB.CSS.faeces.both.metab %>% get_pcoa()
+pca.faeces <- df.faeces %>% get_pca()
+
+sl(procrustes.test.faeces,vegan::protest(X = pcoa.faeces, Y = pca.faeces, scores = "sites", symmetric = T, permutations = 999), overwrite = FALSE)
+
+# procrustes.test.faeces
+
+## Samples with all 3 data types
+
+sl(procrustes.test.faeces.sub,vegan::protest(X = pcoa.faeces.all, Y = pca.all, scores = "sites", symmetric = T, permutations = 999), overwrite = FALSE)
+
+# procrustes.test.faeces.sub
+```
+
+```{r}
+get_proc <- function(test="Vegan::protest output"){
+res <- c(test$ss,test$scale,test$signif)
+return(res)
+}
+
+bac_milk_bac_faeces <- get_proc(procrustes.test.bac.sub)
+bac_milk_metab_milk <- get_proc(procrustes.test.milk.sub)
+bac_faeces_metab_milk <- get_proc(procrustes.test.faeces.sub)
+
+m <- matrix(nrow = 0, ncol =3)
+colnames(m) <- c("Sum of Squares", "Procrustes Correlation", "Pr.F")
+
+m <- rbind(m,bac_milk_bac_faeces,bac_milk_metab_milk,bac_faeces_metab_milk)
+m
+
+rownames(m) <- c("Milk bac vs feacal bac", "Milk bac vs milk metab", "Fecal bac vs milk metab")
+
+#Prepare for plotting
+
+dat <- m %>%
+  as.data.frame() %>%
+  tibble::add_column(Variable = rownames(m),.name_repair = "minimal") 
+
+#Add adjusted p-values
+dat$Pr.F.adj <- p.adjust(dat$Pr.F, method = 'holm')
+
+#Show table
+#knitr::kable(anova.dat)
+
+##Fancy plot
+
+melt <- tidyr::pivot_longer(dat,cols=c("Procrustes Correlation"), names_to='measure', values_to="value") %>%
+  add_significance(p.col = "Pr.F", output.col = "PrF.sym",
+                   cutpoints = c(0, 1e-04, 0.001, 0.01, 0.05, 0.1,1),
+                   symbols = c("****", "***", "**", "*", "\u02D9", "")
+                   ) #%>%
+  #arrange(value)
+
+procrustes.bar <- ggbarplot(melt,
+                                         x="Variable",
+                                         y="value",
+                                         #color = "Variable",
+                                         orientation = c("horizontal"),
+                                         color = NA,
+                                         fill = "measure",
+                                         position=position_dodge(0.7),
+                                         label = melt$PrF.sym,
+                                         lab.size = 9,
+                                         lab.vjust = 0.7,
+                                         lab.hjust = -0.3
+                                         
+) +
+  #stat_pvalue_manual(
+  #  adonis.melt,  label = "PrF.sym", tip.length = 0.01
+  #) +
+  #geom_hline(yintercept = 0.05) +
+  ggtitle("") +
+  xlab("") +
+  ylab("Procrustes test correlation") +
+  scale_fill_jco() +
+  scale_x_discrete(limits = rev)
+
+procrustes.bar
+```
+
+### Per time point
+
+#### Subset matrices
+
+```{r}
+#Samples present in all three matrices
+
+## Day 3
+PSB.CSS.milk.all.3 <- subset_samples(PSB.CSS.milk.both.metab, Days == 3)
+#PSB.CSS.faeces.all.3 <- subset_samples(PSB.CSS.faeces.all, Days == 3)
+PSB.CSS.milk.all.3
+df.both.3 <- metab[which(meta$RCID %in% PSB.CSS.milk.all.3@sam_data$RCID),]
+
+## Day 30
+PSB.CSS.milk.all.30 <- subset_samples(PSB.CSS.milk.all, Days == 30)
+PSB.CSS.faeces.all.30 <- subset_samples(PSB.CSS.faeces.all, Days == 30)
+PSB.CSS.milk.all.30
+df.both.30 <- metab[which(meta$RCID %in% PSB.CSS.milk.all.30@sam_data$RCID),]
+
+## Day 60
+PSB.CSS.milk.all.60 <- subset_samples(PSB.CSS.milk.all, Days == 60)
+PSB.CSS.faeces.all.60 <- subset_samples(PSB.CSS.faeces.all, Days == 60)
+PSB.CSS.milk.all.60
+df.both.60 <- metab[which(meta$RCID %in% PSB.CSS.milk.all.60@sam_data$RCID),]
+
+## Day 90
+PSB.CSS.milk.all.90 <- subset_samples(PSB.CSS.milk.all, Days == 90)
+PSB.CSS.faeces.all.90 <- subset_samples(PSB.CSS.faeces.all, Days == 90)
+PSB.CSS.milk.all.90
+df.both.90 <- metab[which(meta$RCID %in% PSB.CSS.milk.all.90@sam_data$RCID),]
+```
+
+#### Plot  
+
+```{r}
+sl(proctest.milkmet.3,vegan::protest(X = get_pcoa(PSB.CSS.milk.all.3), Y = get_pca(df.both.3), scores = "sites", symmetric = T, permutations = 999), overwrite = FALSE)
+# sl(proctest.feacesmet.0,vegan::protest(X = get_pcoa(PSB.CSS.faeces.all.3), Y = get_pca(df.both.3), scores = "sites", symmetric = T, permutations = 999), overwrite = FALSE) # No day 3 faecal samples
+# sl(proctest.milkfaec.0,vegan::protest(X = get_pcoa(PSB.CSS.milk.all.3), Y = get_pcoa(PSB.CSS.faeces.all.3), scores = "sites", symmetric = T, permutations = 999), overwrite = FALSE)
+
+sl(proctest.milkmet.30,vegan::protest(X = get_pcoa(PSB.CSS.milk.all.30), Y = get_pca(df.both.30), scores = "sites", symmetric = T, permutations = 999), overwrite = FALSE)
+sl(proctest.feacesmet.30,vegan::protest(X = get_pcoa(PSB.CSS.faeces.all.30), Y = get_pca(df.both.30), scores = "sites", symmetric = T, permutations = 999), overwrite = FALSE) # No day 30 faecal samples
+sl(proctest.milkfaec.30,vegan::protest(X = get_pcoa(PSB.CSS.milk.all.30), Y = get_pcoa(PSB.CSS.faeces.all.30), scores = "sites", symmetric = T, permutations = 999), overwrite = FALSE)
+
+sl(proctest.milkmet.60,vegan::protest(X = get_pcoa(PSB.CSS.milk.all.60), Y = get_pca(df.both.60), scores = "sites", symmetric = T, permutations = 999), overwrite = FALSE)
+sl(proctest.feacesmet.60,vegan::protest(X = get_pcoa(PSB.CSS.faeces.all.60), Y = get_pca(df.both.60), scores = "sites", symmetric = T, permutations = 999), overwrite = FALSE) # No day 60 faecal samples
+sl(proctest.milkfaec.60,vegan::protest(X = get_pcoa(PSB.CSS.milk.all.60), Y = get_pcoa(PSB.CSS.faeces.all.60), scores = "sites", symmetric = T, permutations = 999), overwrite = FALSE)
+
+sl(proctest.milkmet.90,vegan::protest(X = get_pcoa(PSB.CSS.milk.all.90), Y = get_pca(df.both.90), scores = "sites", symmetric = T, permutations = 999), overwrite = FALSE)
+sl(proctest.feacesmet.90,vegan::protest(X = get_pcoa(PSB.CSS.faeces.all.90), Y = get_pca(df.both.90), scores = "sites", symmetric = T, permutations = 999), overwrite = FALSE) # No day 90 faecal samples
+sl(proctest.milkfaec.90,vegan::protest(X = get_pcoa(PSB.CSS.milk.all.90), Y = get_pcoa(PSB.CSS.faeces.all.90), scores = "sites", symmetric = T, permutations = 999), overwrite = FALSE)
+
+# Combine outputs
+
+m <- matrix(nrow = 0, ncol =3)
+colnames(m) <- c("Sum of Squares", "Procrustes Correlation", "Pr.F")
+
+m <- rbind(m,
+           get_proc(proctest.milkmet.3),
+           get_proc(proctest.milkmet.30),
+           get_proc(proctest.milkmet.60),
+           get_proc(proctest.milkmet.90))
+
+m <- as.data.frame(m)
+m$Days <- c("Day 3", "Day 30", "Day 60", "Day 90")
+m$Comparison <- "Milk bacteria vs milk metabolome"
+
+m.1 <- m
+
+
+m <- matrix(nrow = 0, ncol =3)
+colnames(m) <- c("Sum of Squares", "Procrustes Correlation", "Pr.F")
+
+m <- rbind(m,
+           get_proc(proctest.feacesmet.30),
+           get_proc(proctest.feacesmet.60),
+           get_proc(proctest.feacesmet.90))
+
+m <- as.data.frame(m)
+m$Days <- c("Day 30", "Day 60", "Day 90")
+m$Comparison <- "Faecal bacteria vs milk metabolome"
+
+m.2 <- m
+
+
+
+m <- matrix(nrow = 0, ncol =3)
+colnames(m) <- c("Sum of Squares", "Procrustes Correlation", "Pr.F")
+
+m <- rbind(m,
+           get_proc(proctest.milkfaec.30),
+           get_proc(proctest.milkfaec.60),
+           get_proc(proctest.milkfaec.90))
+
+m <- as.data.frame(m)
+m$Days <- c("Day 30", "Day 60", "Day 90")
+m$Comparison <- "Milk bacteria vs faecal bacteria"
+
+m.3 <- m
+
+#Prepare for plotting
+
+dat <- rbind(m.1,m.2,m.3)
+
+# dat <- m %>%
+#   as.data.frame() %>%
+#   tibble::add_column(Variable = rownames(m),.name_repair = "minimal") 
+
+#Add adjusted p-values
+dat$Pr.F.adj <- p.adjust(dat$Pr.F, method = 'holm')
+
+#Show table
+#knitr::kable(anova.dat)
+
+##Fancy plot
+
+melt <- tidyr::pivot_longer(dat,cols=c("Procrustes Correlation"), names_to='measure', values_to="Procrustes Correlation") %>%
+  add_significance(p.col = "Pr.F", output.col = "PrF.sym",
+                   cutpoints = c(0, 1e-04, 0.001, 0.01, 0.05, 0.1,1),
+                   symbols = c("****", "***", "**", "*", "\u02D9", "")
+                   ) #%>%
+  #arrange(value)
+
+#Set order
+melt$Days <- factor(melt$Days, levels = c("Day 3", "Day 30", "Day 60", "Day 90"))
+
+procrustes.bar <- ggbarplot(melt,
+                                         x="Comparison",
+                                         y="Procrustes Correlation",
+                                         #color = "Variable",
+                                         orientation = c("vertical"),
+                                         color = NA,
+                                         fill = "Days",
+                                         legend = "right",
+                                         position=position_dodge(0.7),
+                                         label = melt$PrF.sym,
+                                         lab.size = 9,
+                                         lab.vjust = 0.5,
+                                         lab.hjust = 0.5
+                                         
+) +
+  #stat_pvalue_manual(
+  #  adonis.melt,  label = "PrF.sym", tip.length = 0.01
+  #) +
+  #geom_hline(yintercept = 0.05) +
+  ggtitle("") +
+  xlab("") +
+  #ylab("Procrustes test significance") +
+  scale_fill_jco() +
+  scale_x_discrete(limits = rev)
+
+procrustes.bar
+
+#Set order
+melt$Days <- factor(melt$Days, levels = rev(c("Day 3", "Day 30", "Day 60", "Day 90")))
+
+sl(procrustes.bar.comb,ggbarplot(melt,
+                                         x="Days",
+                                         y="Procrustes Correlation",
+                                         #color = "Variable",
+                                         orientation = c("vertical"),
+                                         color = NA,
+                                         fill = "Comparison",
+                                         legend = "none",
+                                         position=position_dodge(0.7),
+                                         label = melt$PrF.sym,
+                                         lab.size = 9,
+                                         lab.vjust = 0.5,
+                                         lab.hjust = 0.5,
+                                         facet.by = "Comparison",
+                                         scales = "free_x",
+                                         
+                                         
+) +
+  #stat_pvalue_manual(
+  #  adonis.melt,  label = "PrF.sym", tip.length = 0.01
+  #) +
+  #geom_hline(yintercept = 0.05) +
+  ggtitle("") +
+  xlab("") +
+  #ylab("Procrustes test significance") +
+  scale_fill_manual(values=col_fil) +
+  theme(strip.background = element_rect(colour = "white", fill = "white"),
+        #axis.text.x=element_text(angle = 45, hjust = 1),
+        strip.text.x = element_text(size = 12, angle = 0),
+        legend.text = element_text(size = 12)
+        #panel.border = element_rect(fill = NA, color = NA)
+  ),
+overwrite = TRUE)
+
+procrustes.bar.comb
+```
+
+# Correlation heatmaps
+
+## Correlation test function
+
+```{r}
+
+# Correlation heatmap function
+
+cor_pheatmap <- function(x="numeric matrix with RCID",y="numeric matrix with RCID", p_cutoff = 0.05, cor_cutoff = 0.1){
+
+# Remove zero-sum rows and columns
+y <- y %>%
+  select(-RCID) %>%
+  filter(rowSums(.,na.rm=TRUE) != 0) %>%
+  dplyr::select(where(~ sum(., na.rm = TRUE) != 0)) %>%
+  bind_cols(y['RCID'], .)
+
+x <- x %>%
+  select(-RCID) %>%
+  filter(rowSums(.,na.rm=TRUE) != 0) %>%
+  dplyr::select(where(~ sum(., na.rm = TRUE) != 0)) %>%
+  bind_cols(x['RCID'], .)
+  
+
+# Align dataframes
+y <- y[which(y$RCID %in% x$RCID),] %>% arrange(RCID)
+x <- x[which(y$RCID %in% y$RCID),] %>% arrange(RCID)
+
+
+
+y <- y %>% select(-RCID)
+x <- x %>% select(-RCID)
+
+# initialize empty matrices
+mat_cor <- mat_pval <- mat_signif <- matrix(NA,
+                                            nrow = ncol(x),
+                                            ncol = ncol(y),
+                                            dimnames = list(colnames(x),
+                                                            colnames(y)))
+
+# for each pair, compute one cell of the matrice
+for(metab in colnames(x)){
+  for(param in colnames(y)){
+    
+    # correlation coefficient
+    mat_cor[metab, param] <- cor(x[[metab]],
+                                 y[[param]],
+                                 method = "pearson",
+                                 use="pairwise.complete.obs" #Removal of NA values for each pairwise correlations
+                                 #use="complete.obs" # All cases with missing values removed
+                                 )
+    
+    # pvalue
+    pval <- cor.test(x[[metab]],
+                     y[[param]],
+                     method = "pearson",
+                     use="pairwise.complete.obs"
+                     #use="complete.obs"
+                     )[["p.value"]]
+    
+    # decide nb of stars
+    if(pval >= 0.05){
+      stars <- ""
+    } else if(pval >= 0.01){
+      stars <- "⁎"
+    } else if(pval >= 1e-3){
+      stars <- "⁎⁎"
+    } else{
+      stars <- "⁎⁎⁎"
+    }
+    
+    # save pvalue and stars in the corresponding matrices
+    mat_pval[metab, param] <- pval
+    mat_signif[metab, param] <- stars
+  }
+}
+
+# Select only significance values below threshold
+mat_pval_sig <- mat_pval %>%
+  as.data.frame() %>%
+  dplyr::select(where(~ any(. < p_cutoff))) %>%
+  dplyr::filter(rowSums(. < p_cutoff) > 0) 
+
+#Subset matrices
+mat_cor_sig <- mat_cor %>%
+  as.data.frame() %>%
+  select(colnames(mat_pval_sig)) %>%
+  filter(row.names(mat_cor) %in% rownames(mat_pval_sig))
+
+mat_signif_sig <- mat_signif %>%
+  as.data.frame() %>%
+  select(colnames(mat_pval_sig)) %>%
+  filter(row.names(mat_signif) %in% rownames(mat_pval_sig)) 
+
+#Subset correlations by threshold
+mat_cor_sig_cor <- mat_cor_sig %>%
+  as.data.frame() %>%
+  dplyr::select(where(~ any(. > cor_cutoff | . < -cor_cutoff))) %>%
+  dplyr::filter(rowSums(. < cor_cutoff | . > -cor_cutoff) > 0) 
+
+mat_pval_sig_cor <- mat_pval_sig %>%
+  as.data.frame() %>%
+  select(colnames(mat_cor_sig_cor)) %>%
+  filter(row.names(mat_signif_sig) %in% rownames(mat_cor_sig_cor)) %>%
+  dplyr::select(where(~ any(. < p_cutoff))) %>%
+  dplyr::filter(rowSums(. < p_cutoff) > 0) 
+
+mat_cor_sig_cor <- mat_cor_sig_cor %>%
+  as.data.frame() %>%
+  select(colnames(mat_pval_sig_cor)) %>%
+  filter(row.names(mat_cor_sig_cor) %in% rownames(mat_pval_sig_cor))
+
+## Repeat removal of non-significant or correlating rows/columns
+mat_cor_sig_cor <- mat_cor_sig_cor %>%
+  as.data.frame() %>%
+  dplyr::select(where(~ any(. > cor_cutoff | . < -cor_cutoff))) %>%
+  dplyr::filter(rowSums(. < cor_cutoff | . > -cor_cutoff) > 0) 
+
+mat_pval_sig_cor <- mat_pval_sig_cor %>%
+  as.data.frame() %>%
+  select(colnames(mat_cor_sig_cor)) %>%
+  filter(row.names(mat_pval_sig_cor) %in% rownames(mat_cor_sig_cor)) %>%
+  dplyr::select(where(~ any(. < p_cutoff))) %>%
+  dplyr::filter(rowSums(. < p_cutoff) > 0) 
+
+mat_cor_sig_cor <- mat_cor_sig_cor %>%
+  as.data.frame() %>%
+  select(colnames(mat_pval_sig_cor)) %>%
+  filter(row.names(mat_cor_sig_cor) %in% rownames(mat_pval_sig_cor))
+
+mat_signif_sig_cor <- mat_signif_sig %>%
+  as.data.frame() %>%
+  select(colnames(mat_cor_sig_cor)) %>%
+  filter(row.names(mat_signif_sig) %in% rownames(mat_cor_sig_cor))
+
+  
+# Save objects
+cor_list <- list()
+cor_list$mat_cor <- mat_cor
+cor_list$mat_cor_sig <- mat_cor_sig
+cor_list$mat_pval <- mat_pval
+cor_list$mat_pval_sig <- mat_pval_sig
+cor_list$mat_signif <- mat_signif
+cor_list$mat_signif_sig <- mat_signif_sig
+cor_list$mat_cor_sig_cor <- mat_cor_sig_cor
+cor_list$mat_signif_sig_cor <- mat_signif_sig_cor
+
+return(cor_list)
+}
+```
+
+
+## Maternal blood samples vs milk metabolites
+
+```{r}
+library(pheatmap)
+set.seed(123)
+
+# Select dataframes
+
+## Blood markers
+
+x <- meta %>%
+  select(c(bio_kreak:bio_urat)) %>%
+  dplyr::mutate(across(everything(), ~str_replace_all(., ">", ""))) %>%
+  dplyr::mutate(across(everything(), ~str_replace_all(., ",", "."))) %>% 
+  dplyr::mutate(across(everything(), as.numeric))
+
+x <- x %>% select(-bio_crp) # Too many missing values
+x$RCID <- meta$RCID # Add id's again
+x <- x %>% drop_na() # alternately filer only rows with all NAs filter(rowSums(is.na(.)) < ncol(.))
+
+## Milk metabolites
+y <- metab.id
+
+
+
+# cor <- cor_pheatmap(x,y,p_cutoff=0.01)
+cor <- cor_pheatmap(x,y,p_cutoff=0.01,cor_cutoff = 0.15)
+
+pheatmap(cor$mat_cor_sig,
+         display_numbers = cor$mat_signif_sig,
+         fontsize_number = 20,
+         angle_col = 45)
+
+pheatmap(cor$mat_cor_sig_cor,
+         display_numbers = cor$mat_signif_sig_cor,
+         fontsize_number = 20,
+         angle_col = 45)
+```
+
+## Milk bacteria vs milk metabolites
+
+```{r}
+# Select dataframes
+
+## Milk bacteria
+
+ps <- subset_samples(PSB.genus,Sample.type=="Milk") %>%
+  transform_sample_counts(., function(x) x / sum(x))
+  
+
+tax <- tax_best(ps)
+
+ps.df <- as.data.frame(otu_table(ps)) %>%
+  t() %>%
+  `colnames<-`(tax$best) %>%
+  as.data.frame()
+
+col_sums <- colSums(ps.df) # Select 30 highest abundance ASVs
+top_cols <- names(sort(col_sums, decreasing = TRUE)[1:30])
+x <- ps.df %>%
+  select(all_of(top_cols))
+
+x <- x %>%
+  mutate_all(~na_if(., 0))
+
+x$RCID <- sample_data(ps)$RCID
+
+## Metabolites
+
+y <- metab.id
+
+y <- y %>%
+  select(-RCID) %>%
+  select(-Acetoin) %>%
+  mutate_all(~na_if(., 0)) %>%
+  bind_cols(y['RCID'], .)
+
+## Person correlations
+
+cor <- cor_pheatmap(x,y,p_cutoff=0.01,cor_cutoff = 0.2)
+
+pheatmap(cor$mat_cor_sig,
+         display_numbers = cor$mat_signif_sig,
+         fontsize_number = 20,
+         angle_col = 45)
+
+pheatmap(cor$mat_cor_sig_cor,
+         display_numbers = cor$mat_signif_sig_cor,
+         fontsize_number = 20,
+         angle_col = 45)
+```
+
+## Faecal bacteria vs milk Metabolites
+
+### Genus
+
+```{r}
+# Select dataframes
+
+## Faecal bacteria bacteria
+
+ps <- subset_samples(PSB.genus,Sample.type=="Faecal sample") %>%
+  transform_sample_counts(., function(x) x / sum(x))
+
+## Select high abundance+prevalance ASVs
+
+# prev <- 0.03 #10/nrow(PSB.all@sam_data)
+# ps = phyloseq_filter_prevalence(ps, prev.trh = prev, abund.trh = 0.005, abund.type = "mean", threshold_condition = "AND")
+
+
+tax <- tax_best(ps)
+
+ps.df <- as.data.frame(otu_table(ps)) %>%
+  t() %>%
+  `colnames<-`(tax$best) %>%
+  as.data.frame()
+
+x <- ps.df
+
+# x <- ps.df %>%
+#   mutate_all(~na_if(., 0))
+# 
+
+
+x$RCID <- sample_data(ps)$RCID
+
+## Metabolites
+
+y <- metab.id
+
+# y <- y %>%
+#   select(-RCID) %>%
+#   select(-Acetoin) %>%
+#   mutate_all(~na_if(., 0)) %>%
+#   bind_cols(y['RCID'], .)
+
+## Person correlations
+
+cor <- cor_pheatmap(x,y,p_cutoff=0.05,cor_cutoff = 0.5)
+
+pheatmap(cor$mat_cor_sig,
+         display_numbers = cor$mat_signif_sig,
+         fontsize_number = 20,
+         angle_col = 45)
+
+pheatmap(cor$mat_cor_sig_cor,
+         display_numbers = cor$mat_signif_sig_cor,
+         fontsize_number = 20,
+         angle_col = 45)
+```
+
+### Species
+
+```{r}
+# Select dataframes
+
+## Faecal bacteria bacteria
+
+ps <- subset_samples(PSB.species,Sample.type=="Faecal sample") %>%
+  transform_sample_counts(., function(x) x / sum(x))
+  
+
+tax <- tax_best(ps)
+
+ps.df <- as.data.frame(otu_table(ps)) %>%
+  t() %>%
+  `colnames<-`(tax$best) %>%
+  as.data.frame()
+
+col_sums <- colSums(ps.df) # Select 30 highest abundance ASVs
+top_cols <- names(sort(col_sums, decreasing = TRUE)[1:30])
+x <- ps.df %>%
+  select(all_of(top_cols))
+
+x$RCID <- sample_data(ps)$RCID
+
+## Metabolites
+
+y <- metab.id
+
+## Person correlations
+
+cor <- cor_pheatmap(x,y,p_cutoff=0.01,cor_cutoff = 0.15)
+
+pheatmap(cor$mat_cor_sig,
+         display_numbers = cor$mat_signif_sig,
+         fontsize_number = 20,
+         angle_col = 45)
+
+pheatmap(cor$mat_cor_sig_cor,
+         display_numbers = cor$mat_signif_sig_cor,
+         fontsize_number = 20,
+         angle_col = 45)
+```
+
+## Milk vs Faecal bacteria?
+
+```{r}
+# Select dataframes
+
+## Milk bacteria
+
+ps <- subset_samples(PSB.genus,Sample.type=="Milk") %>%
+  transform_sample_counts(., function(x) x / sum(x))
+  
+
+tax <- tax_best(ps)
+
+ps.df <- as.data.frame(otu_table(ps)) %>%
+  t() %>%
+  #`colnames<-`(paste(tax$best," HM")) %>%
+  `colnames<-`(tax$best) %>%
+  as.data.frame()
+
+col_sums <- colSums(ps.df) # Select 30 highest abundance ASVs
+top_cols <- names(sort(col_sums, decreasing = TRUE)[1:60])
+x <- ps.df %>%
+  select(all_of(top_cols))
+
+x$RCID <- sample_data(ps)$RCID
+
+## Faecal bacteria
+
+ps <- subset_samples(PSB.genus,Sample.type=="Faecal sample") %>%
+  transform_sample_counts(., function(x) x / sum(x))
+  
+
+tax <- tax_best(ps)
+
+ps.df <- as.data.frame(otu_table(ps)) %>%
+  t() %>%
+  #`colnames<-`(paste(tax$best," FS")) %>%
+  `colnames<-`(tax$best) %>%
+  as.data.frame()
+
+col_sums <- colSums(ps.df) # Select 30 highest abundance ASVs
+top_cols <- names(sort(col_sums, decreasing = TRUE)[1:60])
+y <- ps.df %>%
+  select(all_of(top_cols))
+
+y$RCID <- sample_data(ps)$RCID
+
+
+# Select only co-ocurring bacteria
+
+y <- y[,intersect(colnames(y),colnames(x))]
+x <- x[,intersect(colnames(y),colnames(x))]
+
+## Person correlations
+
+cor <- cor_pheatmap(x,y,p_cutoff=0.05,cor_cutoff = 0.2)
+
+pheatmap(cor$mat_cor_sig,
+         display_numbers = cor$mat_signif_sig,
+         fontsize_number = 20,
+         angle_col = 45)
+
+pheatmap(cor$mat_cor_sig_cor,
+         display_numbers = cor$mat_signif_sig_cor,
+         fontsize_number = 20,
+         angle_col = 45)
+
+```
+
+# Bifidobacteria correlations
+
+## Milk bacteria vs milk metabolites
+
+```{r}
+# Select dataframes
+
+## Milk bacteria
+
+ps <- subset_samples(PSB.species,Sample.type=="Milk") %>%
+  transform_sample_counts(., function(x) x / sum(x)) %>%
+  subset_taxa(Genus == "Bifidobacterium") 
+  
+
+tax <- tax_best(ps)
+
+ps.df <- as.data.frame(otu_table(ps)) %>%
+  t() %>%
+  `colnames<-`(tax$best) %>%
+  as.data.frame()
+
+# col_sums <- colSums(ps.df) # Select 30 highest abundance ASVs
+#top_cols <- names(sort(col_sums, decreasing = TRUE)[1:50])
+# x <- ps.df %>%
+#   select(all_of(top_cols))
+
+x <- ps.df
+x$RCID <- sample_data(ps)$RCID
+x <- x %>% filter(rowSums(select_if(., is.numeric)) != 0)
+
+
+## Metabolites
+
+y <- metab.id
+
+## Person correlations
+
+cor <- cor_pheatmap(x,y,p_cutoff=0.05,cor_cutoff = 0.1)
+
+pheatmap(cor$mat_cor_sig,
+         display_numbers = cor$mat_signif_sig,
+         fontsize_number = 20,
+         angle_col = 45)
+
+pheatmap(cor$mat_cor_sig_cor,
+         display_numbers = cor$mat_signif_sig_cor,
+         fontsize_number = 20,
+         angle_col = 45)
+```
+
+## Faecal bacteria vs milk Metabolites
+
+```{r}
+# Select dataframes
+
+## Faecal bacteria bacteria
+
+ps <- subset_samples(PSB.species,Sample.type=="Faecal sample") %>%
+  transform_sample_counts(., function(x) x / sum(x))  %>%
+  subset_taxa(Genus == "Bifidobacterium") 
+  
+
+tax <- tax_best(ps)
+
+ps.df <- as.data.frame(otu_table(ps)) %>%
+  t() %>%
+  `colnames<-`(tax$best) %>%
+  as.data.frame()
+
+# col_sums <- colSums(ps.df) # Select 30 highest abundance ASVs
+# top_cols <- names(sort(col_sums, decreasing = TRUE)[1:30])
+# x <- ps.df %>%
+#   select(all_of(top_cols))
+
+x <- ps.df
+x$RCID <- sample_data(ps)$RCID
+x <- x %>% filter(rowSums(select_if(., is.numeric)) != 0)
+
+## Metabolites
+
+y <- metab.id
+
+## Person correlations
+
+cor <- cor_pheatmap(x,y,p_cutoff=0.05,cor_cutoff = 0.1)
+
+pheatmap(cor$mat_cor_sig,
+         display_numbers = cor$mat_signif_sig,
+         fontsize_number = 20,
+         angle_col = 45)
+
+pheatmap(cor$mat_cor_sig_cor,
+         display_numbers = cor$mat_signif_sig_cor,
+         fontsize_number = 20,
+         angle_col = 45)
+```
+
+## Milk vs Faecal bacteria?
+
+```{r}
+# Select dataframes
+
+## Milk bacteria
+
+ps <- subset_samples(PSB.species,Sample.type=="Milk") %>%
+  transform_sample_counts(., function(x) x / sum(x)) %>%
+  subset_taxa(Genus == "Bifidobacterium") 
+  
+
+tax <- tax_best(ps)
+
+ps.df <- as.data.frame(otu_table(ps)) %>%
+  t() %>%
+  #`colnames<-`(paste(tax$best," HM")) %>%
+  `colnames<-`(tax$best) %>%
+  as.data.frame()
+
+x <- ps.df
+x$RCID <- sample_data(ps)$RCID
+x <- x %>% filter(rowSums(select_if(., is.numeric)) != 0)
+
+## Faecal bacteria
+
+ps <- subset_samples(PSB.species,Sample.type=="Faecal sample") %>%
+  transform_sample_counts(., function(x) x / sum(x)) %>%
+  subset_taxa(Genus == "Bifidobacterium") 
+  
+
+tax <- tax_best(ps)
+
+ps.df <- as.data.frame(otu_table(ps)) %>%
+  t() %>%
+  #`colnames<-`(paste(tax$best," FS")) %>%
+  `colnames<-`(tax$best) %>%
+  as.data.frame()
+
+y <- ps.df
+y$RCID <- sample_data(ps)$RCID
+y <- y %>% filter(rowSums(select_if(., is.numeric)) != 0)
+
+
+# Select only co-ocurring bacteria
+
+# y <- y[,intersect(colnames(y),colnames(x))]
+# x <- x[,intersect(colnames(y),colnames(x))]
+
+## Person correlations
+
+cor <- cor_pheatmap(x,y,p_cutoff=0.05,cor_cutoff = 0.1)
+
+pheatmap(cor$mat_cor_sig,
+         display_numbers = cor$mat_signif_sig,
+         fontsize_number = 20,
+         angle_col = 45)
+
+pheatmap(cor$mat_cor_sig_cor,
+         display_numbers = cor$mat_signif_sig_cor,
+         fontsize_number = 20,
+         angle_col = 45)
+```
+  
+# Age propensity scoring
+
+```{r}
+library(tidyverse)
+library(caret)
+library(MLeval)
+
+# Set x2 to be a dataframe with n samples and then the features as columns. ONLY include the predictors and the endpoint. Name the endpoint age or change below. 
+
+# Prep data
+
+# df.days <- cbind(
+#   df,
+#   Days = as.numeric(meta$Days)
+#   )
+
+repCV10 <- trainControl(method = "repeatedcv", number = 5,
+                        repeats = 10,
+                        returnResamp = "all",
+                        savePredictions = "all",
+                        allowParallel = T,
+                        verboseIter = F
+                        )
+```
+
+## Model selection and score calculations
+
+### Milk samples
+
+```{r}
+ps <- subset_samples(PSB,Sample.type == "Milk") %>%
+  transform_sample_counts(function(x) {x/sum(x)})
+prev <- 4/nrow(ps@sam_data) #Remove ASVs not found in at least 4 samples 
+ps = phyloseq_filter_prevalence(ps, prev.trh = prev, abund.trh = 0.001, abund.type = "mean", threshold_condition = "AND")
+taxa <- rownames(ps@tax_table)
+sum(sample_sums(ps))/nrow(ps@sam_data)
+
+df <- as.data.frame(ps@otu_table) %>% t() %>% as.data.frame()
+df$Days <- ps@sam_data$Days
+
+# Run the model to set 
+sl(prop_milk,
+  train(
+  Days ~., data = df, 
+  method = 'spls',
+  trControl = repCV10,
+  preProcess = c("scale","center"),
+  tuneGrid = expand.grid(K = 1:5, # K sets number of components
+                         eta = seq(0,0.9,0.1), # eta sets sparsity kappa = 0.5),
+                         kappa = 0.5)
+  )
+  #,overwrite=TRUE
+)
+
+
+#plot(prop_milk)
+
+
+# modelres <- evalm(model)
+# 
+# # Select a model based on the plots and you may dig out the predictions by:   
+# prd <- predict(model,newdata = x2[,-1] , type = "prob")
+
+# ...Or by looking into the CV predictions stored in the model object. 
+# Where you filter on the model you want to use.
+
+# CSS model 
+ps <- subset_samples(PSB.CSS,Sample.type == "Milk") 
+#Keep taxa based on relative abundance filtering
+ps <- prune_taxa(taxa,ps)
+#sum(sample_sums(ps))/nrow(ps@sam_data)
+
+df.css <- as.data.frame(ps@otu_table) %>% t() %>% as.data.frame()
+df.css$Days <- ps@sam_data$Days
+
+sl(prop_milk_css,
+train(
+  Days ~., data = df.css, 
+  method = 'spls',
+  trControl = repCV10,
+  preProcess = c("scale","center"),
+  tuneGrid = expand.grid(K = 1:5, # K sets number of components
+                         eta = seq(0,0.9,0.1), # eta sets sparsity kappa = 0.5),
+                         kappa = 0.5)
+)
+#,overwrite=TRUE
+)
+
+ggarrange(plot(prop_milk),plot(prop_milk_css))
+
+propCV.milk <- prop_milk$pred %>% 
+filter(eta=="0.2" & K == 2) %>% 
+group_by(rowIndex) %>% 
+dplyr::summarize(predCV  = mean(pred))
+
+propCV.milk.css <- prop_milk_css$pred %>% 
+filter(eta=="0.2" & K == 2) %>% 
+group_by(rowIndex) %>% 
+dplyr::summarize(predCV  = mean(pred))
+
+propCV.milk$RCID <- ps@sam_data$RCID
+propCV.milk$propCV.milk.css <- propCV.milk.css$predCV
+
+ggplot(propCV.milk, aes(x=predCV, y=propCV.milk.css)) + 
+  geom_point()+
+  geom_smooth(method=lm)
+
+propCV.milk.sel <- propCV.milk %>%
+  filter(predCV >= 0, predCV <= 100, propCV.milk.css >= 0, propCV.milk.css <= 100)
+
+ggplot(propCV.milk.sel, aes(x=predCV, y=propCV.milk.css)) + 
+  geom_point()+
+  geom_smooth(method=lm)
+
+# Subset cv scores depending on whether normalised or not were best
+prop.milk.bac <- propCV.milk.sel %>% dplyr::select(RCID,propCV.milk.css)
+```
+
+### Faecal samples
+
+```{r}
+ps <- subset_samples(PSB,Sample.type == "Faecal sample") %>%
+  transform_sample_counts(function(x) {x/sum(x)})
+prev <- 4/nrow(ps@sam_data) #Remove ASVs not found in at least 4 samples
+ps = phyloseq_filter_prevalence(ps, prev.trh = prev, abund.trh = 0.001, abund.type = "mean", threshold_condition = "AND")
+taxa <- rownames(ps@tax_table)
+sum(sample_sums(ps))/nrow(ps@sam_data)
+
+df <- as.data.frame(ps@otu_table) %>% t() %>% as.data.frame()
+df$Days <- ps@sam_data$Days
+
+# Run the model to set 
+sl(prop_faec,
+   train(
+  Days ~., data = df, 
+  method = 'spls',
+  trControl = repCV10,
+  preProcess = c("scale","center"),
+  tuneGrid = expand.grid(K = 1:5, # K sets number of components
+                         eta = seq(0,0.9,0.1), # eta sets sparsity kappa = 0.5),
+                         kappa = 0.5)
+  )
+)
+
+
+#plot(prop_faec)
+
+# modelres <- evalm(model)
+# 
+# # Select a model based on the plots and you may dig out the predictions by:   
+# prd <- predict(model,newdata = x2[,-1] , type = "prob")
+
+# ...Or by looking into the CV predictions stored in the model object. 
+# Where you filter on the model you want to use.
+
+# CSS model 
+ps <- subset_samples(PSB.CSS,Sample.type == "Faecal sample") 
+#Keep taxa based on relative abundance filtering
+ps <- prune_taxa(taxa,ps)
+#sum(sample_sums(ps))/nrow(ps@sam_data)
+
+df.css <- as.data.frame(ps@otu_table) %>% t() %>% as.data.frame()
+df.css$Days <- ps@sam_data$Days
+
+sl(prop_faec_css,
+  train(
+  Days ~., data = df.css, 
+  method = 'spls',
+  trControl = repCV10,
+  preProcess = c("scale","center"),
+  tuneGrid = expand.grid(K = 1:5, # K sets number of components
+                         eta = seq(0,0.9,0.1), # eta sets sparsity kappa = 0.5),
+                         kappa = 0.5)
+  )
+)
+
+ggarrange(plot(prop_faec),plot(prop_faec_css))
+
+propCV.faec <- prop_faec$pred %>% 
+filter(eta=="0.1" & K == 2) %>% 
+group_by(rowIndex) %>% 
+dplyr::summarize(predCV  = mean(pred))
+
+propCV.faec.css <- prop_faec_css$pred %>% 
+filter(eta=="0.1" & K == 2) %>% 
+group_by(rowIndex) %>% 
+dplyr::summarize(predCV  = mean(pred))
+
+propCV.faec$RCID <- ps@sam_data$RCID
+propCV.faec$propCV.faec.css <- propCV.faec.css$predCV
+
+ggplot(propCV.faec, aes(x=predCV, y=propCV.faec.css)) + 
+  geom_point()+
+  geom_smooth(method=lm)
+
+propCV.faec.sel <- propCV.faec %>% filter(predCV >= 0, predCV <= 100, propCV.faec.css >= 0, propCV.faec.css <= 100)
+
+ggplot(propCV.faec.sel, aes(x=predCV, y=propCV.faec.css)) + 
+  geom_point()+
+  geom_smooth(method=lm)
+
+# Subset cv scores depending on whether normalised or not were best
+prop.faec.bac <- propCV.faec.sel %>% dplyr::select(RCID,propCV.faec.css)
+```
+
+### Metabolome
+
+```{r}
+
+# Set x2 to be a dataframe with n samples and then the features as columns. ONLY include the predictors and the endpoint. Name the endpoint age or change below. 
+
+# Prep data
+
+metab.days <- cbind(
+  metab,
+  Days = as.numeric(as.character(meta$Days))
+  )
+
+
+
+# Run the model to set 
+sl(prop_metab_milk,
+   train(
+  Days ~., data = metab.days, 
+  method = 'spls',
+  trControl = repCV10,
+  preProcess = c("scale","center"),
+  tuneGrid = expand.grid(K = 1:5, # K sets number of components
+                         eta = seq(0,0.9,0.1), # eta sets sparsity kappa = 0.5),
+                         kappa = 0.5)
+  )
+)
+
+## Run model on log normalised metabolome
+
+sl(prop_metab_milk_log,
+   train(
+  Days ~., data = metab.days, 
+  method = 'spls',
+  trControl = repCV10,
+  preProcess = c("scale","center"),
+  tuneGrid = expand.grid(K = 1:5, # K sets number of components
+                         eta = seq(0,0.9,0.1), # eta sets sparsity kappa = 0.5),
+                         kappa = 0.5)
+  )
+)
+
+ggarrange(plot(prop_metab_milk),plot(prop_metab_milk_log))
+
+# Select model from based
+
+propCV_milk_metab_sel <- prop_metab_milk$pred %>% 
+filter(eta=="0.8" & K == 2) %>% 
+group_by(rowIndex) %>% 
+dplyr::summarize(predCV  = mean(pred))
+
+propCV_milk_metab_log_sel <- prop_metab_milk_log$pred %>% 
+filter(eta=="0.9" & K ==4) %>% 
+group_by(rowIndex) %>% 
+dplyr::summarize(predCV  = mean(pred))
+
+propCV_milk_metab_sel$RCID <- meta$RCID
+propCV_milk_metab_sel$propCV.milk.metab.log <- propCV_milk_metab_log_sel$predCV
+
+ggplot(propCV_milk_metab_sel, aes(x=predCV, y=propCV.milk.metab.log)) + 
+  geom_point()+
+  geom_smooth(method=lm)
+
+#Save scores from selected model and normalisation
+
+prop.milk.metab <- propCV_milk_metab_sel %>% dplyr::select(c(RCID,predCV)) %>% dplyr::rename( propCV.milk.metab = "predCV")
+
+```
+
+### Propensity-score loadings
+
+```{r}
+m <- prop_metab_milk_log
+m$finalModel$projection %>% 
+  data.frame() %>% 
+  rownames_to_column('mtb') %>% 
+  gather(cmp,loads,-mtb) %>% 
+  ggplot(data = ., aes(mtb,loads, fill = cmp)) + 
+  geom_bar(stat = 'identity', position = position_dodge()) + 
+  coord_flip()
+
+#Og for reggressionsvektoren: 
+b <- m$finalModel$betahat %>% 
+  data.frame() %>% 
+  rownames_to_column('mtb') 
+colnames(b)[2] <- 'b'
+b %>% 
+  ggplot(data = ., aes(mtb,b)) + 
+  geom_bar(stat = 'identity', position = position_dodge()) + 
+  coord_flip()
+
+# 
+# coeffs <- coef(prop_milk$finalModel,unlist(prop_milk$bestTune$lambda))
+# 
+# prop_milk$finalModel$projection
+# 
+# models <- as.data.table(coeffs$coefficients)
+# winnermodelscoeffs <- models[which(coeffs$fraction==cvresult$bestTune$fraction)]
+
+# Metabolome
+
+# coeffs <- coef(prop_metab_milk_log$finalModel,unlist(prop_metab_milk_log$bestTune))
+
+```
+
+#### Combine and export
+
+```{r,eval=T}
+# Combine 
+# propensityCV.merged <- dplyr::full_join(prop.milk.bac,prop.faec.bac,by="RCID") %>%
+#   dplyr::full_join(.,prop.milk.metab,by="RCID")
+
+sl(propensityCV.merged,dplyr::full_join(prop.milk.metab,prop.milk.bac,by="RCID") %>%
+  dplyr::full_join(.,prop.faec.bac,by="RCID"))
+
+# 
+# # Add to phyloseq object
+# df.faec <- propCV.faec.filt %>%
+#   select(c(RCID.uniq,predCV,propCV.faec.css)) %>%
+#   
+#   mutate(Sample.type="Faecal sample")
+# 
+# df.milk <- propCV.milk.filt %>%
+#   select(c(RCID.uniq,predCV,propCV.milk.css)) %>%
+#   mutate(Sample.type="Milk")
+# 
+# propCV.bac <- 
+# 
+# df <- as.data.frame(sample_data(PSB)) -> left_join()
+# PSB@sam_data <- 
+
+
+#Save scores only
+
+```
+
+## Linear comparisons
+
+### All time points
+
+```{r,warning=F}
+prop.dat <- propensityCV.merged %>%
+  dplyr::mutate(Days = str_extract(RCID, "(?<=_).*")) %>%
+  dplyr::mutate(Days = case_when(
+    Days == "3" ~ "30",
+    Days == "4" ~ "60",
+    Days == "5" ~ "90",
+    Days == "2" ~ "3",
+    TRUE ~ Days  # Keeps all other values as they are
+  )) %>%
+  dplyr::mutate(ID = str_extract(RCID, "^[^_]*")) %>%
+  dplyr::mutate_at(dplyr::vars(Days ,RCID, ID), factor)
+
+#Format
+prop.dat$Days <- factor(prop.dat$Days, levels=c("3","30","60","90"))
+
+prop.dat$`Milk bacterial maturity` <- prop.dat$propCV.milk.css
+prop.dat$`Faecal bacterial maturity` <- prop.dat$propCV.faec.css
+prop.dat$`Milk metabolome maturity` <- prop.dat$propCV.milk.metab
+
+prop.plot.milk.bac.faec.bac <- ggplot(prop.dat, aes(x=`Milk bacterial maturity`, y=`Faecal bacterial maturity`)) + 
+  geom_smooth(method=lm) +
+  geom_point(aes(color=Days))+
+  scale_color_manual(values=col_fil,name="Days of life",breaks=c(3,30,60,90))+
+  #ggtitle("Milk bacteria vs faecal bacteria") +
+  stat_cor(method = "pearson", label.x = 10, label.y = 20)
+
+prop.plot.milk.bac.milk.metab <- ggplot(prop.dat, aes(x=`Milk bacterial maturity`, y=`Milk metabolome maturity`)) + 
+  geom_point(aes(color=Days))+
+  stat_smooth(method=lm) +
+  scale_color_manual(values=col_fil,name="Days of life",breaks=c(3,30,60,90))+
+  #ggtitle("Milk bacteria vs milk metabolites") +
+  stat_cor(method = "pearson", label.x = 10, label.y = -25)
+
+prop.plot.faec.bac.milk.metab <- ggplot(prop.dat, aes(x=`Faecal bacterial maturity`, y=`Milk metabolome maturity`)) + 
+  geom_point(aes(color=Days))+
+  stat_smooth(method=lm) +
+  scale_color_manual(values=col_fil,name="Days of life",breaks=c(3,30,60,90))+
+  #ggtitle("Faecal bacteria vs milk metabolites") +
+  stat_cor(method = "pearson", label.x = 10, label.y = -25)
+
+sl(age.propensity.cor,ggarrange(prop.plot.milk.bac.milk.metab,
+                                prop.plot.faec.bac.milk.metab,
+                                prop.plot.milk.bac.faec.bac,
+          nrow=1,
+          labels = c("A","B","C"),
+          font.label = list(size = 30),
+          hjust = 0.3,
+          vjust = 1,
+          common.legend = TRUE,
+          legend="right"),
+   overwrite = TRUE
+   )
+
+age.propensity.cor
+```
+
+### By time point
+
+```{r,warning=F}
+prop.plot.milk.bac.faec.bac.days <- ggplot(prop.dat, aes(x=`Milk bacterial maturity`, y=`Faecal bacterial maturity`,color=Days))+
+  geom_smooth(method=lm,show.legend=FALSE) +
+  geom_point()+
+  scale_color_manual(values=col_fil,name="Days of life",breaks=c(3,30,60,90))+
+  #ggtitle("Milk bacteria vs faecal bacteria") +
+  stat_cor(method = "pearson",show.legend = FALSE)+
+  scale_y_continuous(limits=c(-10,150))
+
+prop.plot.milk.bac.milk.metab.days <- ggplot(prop.dat, aes(x=`Milk bacterial maturity`, y=`Milk metabolome maturity`,color=Days)) + 
+  geom_point()+
+  scale_color_manual(values=col_fil,name="Days of life",breaks=c(3,30,60,90))+
+  stat_smooth(method=lm,show.legend=FALSE) +
+  #ggtitle("Milk bacteria vs milk metabolites") +
+  stat_cor(method = "pearson",show.legend = FALSE)+
+  scale_y_continuous(limits=c(-50,170))
+
+prop.plot.faec.bac.milk.metab.days <- ggplot(prop.dat, aes(x=`Faecal bacterial maturity`, y=`Milk metabolome maturity`,color=Days)) + 
+  geom_point()+
+  scale_color_manual(values=col_fil,name="Days of life",breaks=c(3,30,60,90))+
+  stat_smooth(method=lm,show.legend=FALSE) +
+  #ggtitle("Faecal bacteria vs milk metabolites") +
+  stat_cor(method = "pearson",show.legend = FALSE) +
+  scale_y_continuous(limits=c(-10,150))
+
+sl(age.propensity.cor.days,ggarrange(prop.plot.milk.bac.milk.metab.days,
+                                     prop.plot.faec.bac.milk.metab.days,
+                                     prop.plot.milk.bac.faec.bac.days,
+          nrow=1,
+          labels = c("D","E","F"),
+          font.label = list(size = 30),
+          hjust = 0.3,
+          vjust = 1,
+          common.legend = TRUE,
+          legend="right"),
+   overwrite = TRUE
+   )
+
+age.propensity.cor.days
+```
+
+## Linear models 
+
+See section 5.2 for complex models - not run here due to conflicts of the "lme4" package with "phyloseq"
+
+## Metadata correlations
+
+### Pure microbial maturity scores
+
+
+```{r}
+meta.prop.merged <- left_join(meta,propensityCV.merged,by="RCID")
+
+x <- meta.prop.merged %>% dplyr::select(effect.size.variables[! effect.size.variables %in% c('Batch', 'DNA.conc','Days')]) %>% mutate_all(as.numeric)
+x$RCID <- meta.prop.merged$RCID
+
+y <- meta.prop.merged %>% dplyr::select(c(RCID,propCV.milk.css, propCV.faec.css, propCV.milk.metab))
+
+cor <- cor_pheatmap(x,y,p_cutoff=0.05,cor_cutoff = 0.1)
+
+pheatmap(cor$mat_cor,
+         display_numbers = cor$mat_signif,
+         fontsize_number = 20,
+         angle_col = 45)
+
+pheatmap(cor$mat_cor_sig_cor,
+         display_numbers = cor$mat_signif_sig_cor,
+         fontsize_number = 20,
+         angle_col = 45)
+```
+
+### MAZ scores
+
+```{r}
+prop.dat<-readRDS(here::here("results","RData","5.2_Age_propensity_glm_models","prop.dat.glm.RDS"))
+
+prop.dat$Days <- as.factor(prop.dat$Days)
+
+meta.prop.merged <- left_join(meta,prop.dat,by=c("RCID","Days"),keep = FALSE)
+
+x <- meta.prop.merged %>%
+  dplyr::select(effect.size.variables[! effect.size.variables %in% c('Batch', 'DNA.conc','Days')]) %>% mutate_all(as.numeric)
+x$RCID <- meta.prop.merged$RCID
+
+y <- meta.prop.merged %>% dplyr::select(c(RCID,
+                                          milk.bac.maturity=propCV.milk.css,
+                                          faecal.bac.maturity=propCV.faec.css,
+                                          milk.metab.maturity=propCV.milk.metab,
+                                          milk.bac.z,
+                                          faec.bac.z,
+                                          milk.metab.z))
+
+cor <- cor_pheatmap(x,y,p_cutoff=0.05,cor_cutoff = 0.05)
+
+pheatmap(cor$mat_cor,
+         display_numbers = cor$mat_signif,
+         fontsize_number = 20,
+         angle_col = 45)
+
+#Clean column names
+cor$mat_cor_sig_cor <- cor$mat_cor_sig_cor %>%
+  dplyr::rename(
+    `Milk bacterial maturity` = milk.bac.maturity,
+    `Faecal bacterial maturity` = faecal.bac.maturity,
+    `Milk metabolome maturity` = milk.metab.maturity,
+    `Milk bacterial maturity-for-age` = milk.bac.z,
+    `Faecal bacterial maturity-for-age` = faec.bac.z,
+    `Milk metabolome maturity-for-age` = milk.metab.z
+  )
+
+rownames(cor$mat_cor_sig_cor) <- rownames(cor$mat_cor_sig_cor) %>% str_replace_all(., c(`BMI delta`="delta BMI",
+                                                              ppBMI = "Pre-pregnancy BMI",
+                                                              delta.="Δ",
+                                                              `3m`="3 months",
+                                                              waz = "WAZ",
+                                                              whz = "WHZ",
+                                                              haz = "HAZ",
+                                                              AB="Antibiotics",
+                                                              GDM="Gestational diabetes",
+                                                              Secretor="Secretor status",
+                                                              Lewis="Lewis status",
+                                                              `C section`="C-section",
+                                                              "\\." =" "))
+
+
+sl(age.prop.z,pheatmap(cor$mat_cor_sig_cor,
+         display_numbers = cor$mat_signif_sig_cor,
+         fontsize_number = 20,
+         angle_col = 45,
+         ),
+   overwrite=TRUE
+)
+
+age.prop.z
+
+```
+
+### Mean MAZ scores
+
+```{r}
+# Calculate averages for each ID
+averages <- prop.dat %>%
+  group_by(ID) %>%
+  summarize(
+    avg_milk_bac_z = mean(milk.bac.z, na.rm = TRUE),
+    avg_faec_bac_z = mean(faec.bac.z, na.rm = TRUE),
+    avg_milk_metab_z = mean(milk.metab.z, na.rm = TRUE)
+  )
+
+
+meta$ID <- as.factor(meta$ID)
+meta.id <- meta %>%
+  group_by(ID) %>%
+  dplyr::slice(1) %>%
+  ungroup()
+
+meta.prop.merged <- left_join(averages,meta.id,by="ID",keep = FALSE)
+
+x <- meta.prop.merged %>%
+  dplyr::select(effect.size.variables[! effect.size.variables %in% c('Batch', 'DNA.conc','AB.infant','Days')]) %>% mutate_all(as.numeric) 
+x$RCID <- as.factor(meta.prop.merged$ID)
+
+y <- meta.prop.merged %>% dplyr::select(c(avg_milk_bac_z,
+                                          avg_faec_bac_z,
+                                          avg_milk_metab_z,
+                                          RCID = ID))
+
+#Remove samples with missing RCID (dropout subjects)
+y <- y[!is.na(meta.prop.merged$RCID),]
+x <- x[!is.na(meta.prop.merged$RCID),]
+
+# x <- x[,c(1:11,19)]
+
+cor <- cor_pheatmap(x,y,p_cutoff=0.05,cor_cutoff = 0.05)
+
+pheatmap(cor$mat_cor,
+         display_numbers = cor$mat_signif,
+         fontsize_number = 20,
+         angle_col = 45)
+
+pheatmap(cor$mat_cor_sig_cor,
+         display_numbers = cor$mat_signif_sig_cor,
+         fontsize_number = 20,
+         angle_col = 45)
+
+```
+
+#### Mean vs mean scatterplots
+
+```{r}
+prop.plot.milk.bac.faec.bac.days <- ggplot(meta.prop.merged, aes(x=avg_milk_bac_z, y=avg_faec_bac_z)) + 
+  geom_smooth(method=lm) +
+  geom_point()+
+  ggtitle("Milk bacteria vs faecal bacteria") +
+  stat_cor(method = "pearson")
+
+prop.plot.milk.bac.milk.metab.days <- ggplot(meta.prop.merged, aes(x=avg_milk_bac_z, y=avg_milk_metab_z)) + 
+  geom_point()+
+  stat_smooth(method=lm) +
+  ggtitle("Milk bacteria vs milk metabolites") +
+  stat_cor(method = "pearson")
+
+prop.plot.faec.bac.milk.metab.days <- ggplot(meta.prop.merged, aes(x=avg_faec_bac_z, y=avg_milk_metab_z)) + 
+  geom_point()+
+  stat_smooth(method=lm) +
+  ggtitle("Faecal bacteria vs milk metabolites") +
+  stat_cor(method = "pearson")
+
+ggarrange(prop.plot.milk.bac.faec.bac.days,
+          prop.plot.milk.bac.milk.metab.days,
+          prop.plot.faec.bac.milk.metab.days,
+          nrow=1,
+          common.legend = TRUE,legend="bottom")
+```
+
+### Spread of MAZ scores
+
+```{r}
+# Calculate averages for each ID
+spread <- prop.dat %>%
+  group_by(ID) %>%
+  filter(n() >= 2) %>%
+  summarise(
+    spread_milk_bac_z = ifelse(sum(!is.na(milk.bac.z)) >= 2, max(milk.bac.z, na.rm = TRUE) - min(milk.bac.z, na.rm = TRUE), NA_real_),
+    spread_faec_bac_z = ifelse(sum(!is.na(faec.bac.z)) >= 2, max(faec.bac.z, na.rm = TRUE) - min(faec.bac.z, na.rm = TRUE), NA_real_),
+    spread_milk_metab_z = ifelse(sum(!is.na(milk.metab.z)) >= 2, max(milk.metab.z, na.rm = TRUE) - min(milk.metab.z, na.rm = TRUE), NA_real_)
+  )
+
+  # summarise(spread_milk_bac_z = max(milk.bac.z, na.rm = TRUE) - min(milk.bac.z, na.rm = TRUE),
+  #   spread_faec_bac_z = max(faec.bac.z, na.rm = TRUE) - min(faec.bac.z, na.rm = TRUE),
+  #   spread_milk_metab_z = max(milk.metab.z, na.rm = TRUE) - min(milk.metab.z, na.rm = TRUE)
+  # )
+
+# View the results
+#print(spread)
+
+meta$ID <- as.factor(meta$ID)
+meta.id <- meta %>%
+  group_by(ID) %>%
+  dplyr::slice(1) %>%
+  ungroup()
+
+meta.prop.merged <- left_join(spread,meta.id,by="ID",keep = FALSE)
+
+x <- meta.prop.merged %>%
+  dplyr::select(effect.size.variables[! effect.size.variables %in% c('Batch', 'DNA.conc','AB.infant','Days')]) %>% mutate_all(as.numeric) 
+x$RCID <- as.factor(meta.prop.merged$ID)
+
+y <- meta.prop.merged %>% dplyr::select(c(
+                                          # avg_milk_bac_z,
+                                          # avg_faec_bac_z,
+                                          # avg_milk_metab_z,
+                                          spread_milk_bac_z,
+                                          spread_faec_bac_z,
+                                          spread_milk_metab_z,
+                                          RCID = ID))
+
+#Remove samples with missing RCID (dropout subjects)
+y <- y[!is.na(meta.prop.merged$RCID),]
+x <- x[!is.na(meta.prop.merged$RCID),]
+
+# x <- x[,c(1:11,19)]
+
+cor <- cor_pheatmap(x,y,p_cutoff=0.2,cor_cutoff = 0.1)
+
+pheatmap(cor$mat_cor,
+         display_numbers = cor$mat_signif,
+         fontsize_number = 20,
+         angle_col = 45)
+
+pheatmap(cor$mat_cor_sig_cor,
+         display_numbers = cor$mat_signif_sig_cor,
+         fontsize_number = 20,
+         angle_col = 45)
+
+```
+
+# Session info
+
+
+```{r}
+sessionInfo()
+```

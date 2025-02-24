@@ -1,0 +1,1467 @@
+---
+title: "3.2_Transfer_by_ASV"
+author: "Rasmus Riemer Jakobsen"
+date: "`r Sys.time()`"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+link-citations: yes
+---
+
+# Load data
+
+```{r setup, include=F, message=F, warning=F}
+#Set working directory to script directory
+#setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+
+subdir_name <- "3.2_Transfer_by_ASV"
+
+#Load packages
+source("Supplementary_scripts/package_load_install.R")
+#Load utility functions
+source("Supplementary_scripts/utils.R")
+
+dir.create("results", showWarnings = FALSE, recursive = TRUE)
+
+#source("Supplementary_scripts/create_stability.R")
+
+#source("Phyloseq_import_CSS_16S_laca.R")
+load("0.3_deduplicated_and_decontaminated.RData")
+
+
+theme_set(theme_classic())
+
+knitr::opts_chunk$set(fig.width=12, fig.height=8, fig.fullwidth = TRUE,
+                      root.dir = setwd(dirname(rstudioapi::getActiveDocumentContext()$path))) #Set working directory to script directory 
+
+```
+
+```{r}
+source(here::here("Supplementary_scripts","package_load_install.R")) 
+source(here::here("Supplementary_scripts","utils.R")) # please see the src-folder for some custom functions used in 
+#source(here::here("src", "run_clusterprofiler.R"))
+```
+
+```{r}
+ps <- PSB
+```
+
+```{r knit, echo=F, eval=FALSE}
+rmarkdown::render(
+  input = here(str_c(subdir_name, ".Rmd")),
+  output_dir = here("results", "reports")
+)
+```
+
+
+
+
+# Temporal persistence 
+
+## Frequency over time by child id- Eval when data is updated
+
+```{r, eval = F, message = F}
+#Cannot be made into function due to multiple uses of "subset"
+
+#Milk
+
+PSB.sub <- PSB %>% subset_samples(Sample.type == "Milk")
+Remove low prevalance AND abundance ASVs
+# prev <- 2/nrow(PSB.sub@sam_data)
+# PSB.sub = phyloseq_filter_prevalence(PSB.sub, prev.trh = prev, abund.trh = 1000, abund.type = "total", threshold_condition = "AND")
+
+ps.sub <- subset_samples(PSB.sub, ID %in% PSB.sub@sam_data$ID[duplicated(PSB.sub@sam_data$ID)])
+
+datalist = vector("list", length = nrow(ps.sub@otu_table)) #Create empty datalist
+
+for (id in sort(unique(ps.sub@sam_data$ID))){
+    print(id)
+    ps <- subset_samples(ps.sub,ID == id) %>% ps_arrange(Days) #Arrange ps object by days  
+    otu <- as.data.frame(otu_table(ps))
+    otu <- otu %>%
+    rowwise() %>%
+    mutate(`freq` = sum(c_across(everything()) != 0)/ncol(otu))
+
+    datalist[[paste0("freq_ID_",id,sep="")]] <- otu$freq
+}
+
+otu.freq <- dplyr::bind_cols(datalist) #Combine datalist entries to dataframe
+
+otu.freq.mean <- otu.freq %>% 
+          rowwise() %>% 
+          mutate(freq.mean = mean(c_across(where(is.numeric))))
+
+otu.freq.mean.nz <- otu.freq %>%
+   mutate(across(where(is.numeric), ~na_if(., 0))) %>%
+          rowwise() %>%
+          mutate(freq.mean.nz = mean(c_across(where(is.numeric)),na.rm=TRUE))
+  
+otu.id <- rownames(ps@otu_table)
+
+otu.freq.milk <- cbind(otu.id,otu.freq.mean,select(otu.freq.mean.nz,"freq.mean.nz"))
+sl(otu.freq.milk, otu.freq.milk, overwrite = T) 
+
+#Faeces
+
+PSB.sub <- PSB %>% subset_samples(Sample.type == "Faecal sample")
+ps.sub <- subset_samples(PSB.sub, ID %in% PSB.sub@sam_data$ID[duplicated(PSB.sub@sam_data$ID)])
+Remove low prevalance AND abundance ASVs
+# prev <- 2/nrow(PSB.sub@sam_data)
+# PSB.sub = phyloseq_filter_prevalence(PSB.sub, prev.trh = prev, abund.trh = 1000, abund.type = "total", threshold_condition = "AND")
+
+datalist = vector("list", length = nrow(ps.sub@otu_table)) #Create empty datalist
+
+for (id in sort(unique(ps.sub@sam_data$ID))){
+    print(id)
+    ps <- subset_samples(ps.sub,ID == id) %>% ps_arrange(Days) #Arrange ps object by days  
+    otu <- as.data.frame(otu_table(ps))
+    otu <- otu %>%
+    rowwise() %>%
+    mutate(`freq` = sum(c_across(everything()) != 0)/ncol(otu))
+
+    datalist[[paste0("freq_ID_",id,sep="")]] <- otu$freq
+}
+
+otu.freq <- dplyr::bind_cols(datalist) #Combine datalist entries to dataframe
+
+otu.freq.mean <- otu.freq %>% 
+          rowwise() %>% 
+          mutate(freq.mean = mean(c_across(where(is.numeric))))
+
+otu.freq.mean.nz <- otu.freq %>%
+   mutate(across(where(is.numeric), ~na_if(., 0))) %>%
+          rowwise() %>%
+          mutate(freq.mean.nz = mean(c_across(where(is.numeric)),na.rm=TRUE))
+  
+otu.id <- rownames(ps@otu_table)
+
+otu.freq.faeces <- cbind(otu.id,otu.freq.mean,select(otu.freq.mean.nz,"freq.mean.nz"))
+
+sl(otu.freq.faeces, otu.freq.faeces, overwrite = T) 
+```
+
+## Freq mean distribution
+
+```{r}
+#Load frequency tables
+sl(otu.freq.milk, otu.freq.milk, overwrite = FALSE) 
+sl(otu.freq.faeces, otu.freq.faeces, overwrite = FALSE) 
+
+
+frq.milk.hist <- ggplot(otu.freq.milk, aes(x=freq.mean.nz))+
+  geom_histogram(bins=1000)+
+  geom_density(aes(y = ..density..)) +
+  ggtitle("Milk")+
+  xlab("Mean intra-individual fequency")
+
+frq.milk.hist
+
+frq.faeces.hist <- ggplot(otu.freq.faeces, aes(x=freq.mean.nz))+
+  geom_histogram(bins=1000)+
+  geom_density(aes(y = ..density..)) +
+  ggtitle("Faeces") 
+
+ggarrange(frq.milk.hist,frq.faeces.hist)
+```
+
+## Freq vs mean abundance
+
+```{r, warning = F}
+#Load frequency tables
+sl(otu.freq.milk, otu.freq.milk, overwrite = FALSE) 
+sl(otu.freq.faeces, otu.freq.faeces, overwrite = FALSE) 
+
+sl(PSB.abund.type,metagMisc::phyloseq_average(PSB,group = "Niche", avg_type = "acomp"), overwrite = FALSE)
+
+otu.avg <- data.frame(otu_table(PSB.abund.type))
+otu.avg <- rownames_to_column(otu.avg, var = "otu.id")
+
+#Milk
+freq.abund.milk <- left_join(otu.freq.milk,otu.avg, by = "otu.id")
+
+frq.abund.plot.milk <- ggplot(freq.abund.milk,aes(x=freq.mean.nz,y=Milk))+
+  geom_point() +
+  geom_smooth()+
+  ggtitle("Milk")+
+  xlab("Mean intra-individual fequency")+
+  ylab("Average relative abundance")
+
+#Faeces
+freq.abund.faeces <- left_join(otu.freq.faeces,otu.avg, by = "otu.id")
+
+frq.abund.plot.faeces <- ggplot(freq.abund.faeces,aes(x=freq.mean.nz,y=Infant.faeces))+
+  geom_point() +
+  geom_smooth()+
+  ggtitle("Infant faeces")+
+  xlab("Mean intra-individual fequency")+
+  ylab("Average relative abundance")
+  
+ggarrange(frq.abund.plot.milk,frq.abund.plot.faeces)
+```
+
+### Color by genus - very slow! only run for new data (output saved)
+
+```{r, warning = F}
+ps <- subset_samples(PSB,Sample.type == "Milk")
+
+# prev <- 2/nrow(ps@sam_data)
+# ps = phyloseq_filter_prevalence(ps, prev.trh = prev, abund.trh = 1000, abund.type = "total", threshold_condition = "AND")
+
+otu.id <- rownames(ps@otu_table)
+
+sl(tax_best_milk,
+   get_tax_rank_best(ps,
+                     n_show = 7),
+  overwrite = FALSE)
+
+tax_best_milk <- tax_best_milk %>% dplyr::rename(otu.id = "OTU")
+
+freq.abund.milk.tax <- left_join(freq.abund.milk,
+                                 distinct(tax_best_milk,otu.id, .keep_all = TRUE),
+                                 ,by = "otu.id")
+
+frq.abund.plot.milk.genus <- ggplot(freq.abund.milk.tax,aes(x=freq.mean.nz,y=Milk,color=best_genus_other))+
+  geom_point() +
+  scale_color_manual(values=rep(col_fil,5),name="Genus")+
+  ggtitle("Milk")+
+  xlab("Mean intra-individual fequency")+
+  ylab("Mean relative abundance") 
+
+#frq.abund.plot.milk.genus
+
+frq.abund.plot.milk.family <- ggplot(freq.abund.milk.tax,aes(x=freq.mean.nz,y=Milk,color=best_family_other))+
+  geom_point() +
+  scale_color_manual(values=rep(col_fil,5),name="Family")+
+  ggtitle("Milk")+
+  xlab("Mean intra-individual fequency")+
+  ylab("Mean relative abundance") 
+
+#frq.abund.plot.milk.family
+
+####################################Faeces
+ps <- subset_samples(PSB,Sample.type == "Faecal sample")
+
+# prev <- 2/nrow(ps@sam_data)
+# ps = phyloseq_filter_prevalence(ps, prev.trh = prev, abund.trh = 1000, abund.type = "total", threshold_condition = "AND")
+
+otu.id <- rownames(ps@otu_table)
+
+sl(tax_best_faec,
+   get_tax_rank_best(ps,
+                     n_show = 7),
+  overwrite = FALSE)
+
+tax_best_faec <- tax_best_faec %>% dplyr::rename(otu.id = "OTU")
+
+freq.abund.faeces.tax <- left_join(freq.abund.faeces,
+                                   distinct(tax_best_faec,otu.id, .keep_all = TRUE),
+                                   ,by = "otu.id",keep = )
+
+frq.abund.plot.faeces.genus <- ggplot(freq.abund.faeces.tax,aes(x=freq.mean.nz,y=Infant.faeces,color=best_genus_other))+
+  geom_point()+
+  scale_color_manual(values=rep(col_fil,5),name="Genus")+
+  ggtitle("Infant faeces")+
+  xlab("Mean intra-individual fequency")+
+  ylab("Mean relative abundance") 
+
+#frq.abund.plot.faeces.genus
+
+frq.abund.plot.faeces.family <- ggplot(freq.abund.faeces.tax,aes(x=freq.mean.nz,y=Infant.faeces,color=best_family_other))+
+  geom_point() +
+  scale_color_manual(values=rep(col_fil,5),name="Family")+
+  ggtitle("Infant faeces")+
+  xlab("Mean intra-individual fequency")+
+  ylab("Mean relative abundance") 
+
+#frq.abund.plot.faeces.family
+  
+(sl(freq.abun.tax.plots,
+   ggarrange(frq.abund.plot.milk.genus,
+             frq.abund.plot.milk.family,
+             frq.abund.plot.faeces.genus,
+             frq.abund.plot.faeces.family,
+             nrow = 2),
+   overwrite = T))
+
+ggsave("results/freq.abun.tax.plots.pdf",width=20,height=20,limitsize = FALSE, units = "cm", dpi = 400)
+
+#freq.abun.tax.plots
+```
+
+## Mean distribution
+
+### Milk
+
+#### By Genus
+
+```{r, warning = F}
+#Get order of means per group
+
+bymean <- with(freq.abund.milk.tax, reorder(best_family_other, freq.mean.nz, sum))
+#bymean
+
+freq.abund.milk.tax %>%
+  group_by(best_genus_other) %>%
+  dplyr::summarise(mean = count(freq.mean.nz))
+
+
+freq.abund.milk.tax$best_genus_other <- fct_reorder(.f = freq.abund.milk.tax$best_genus_other,
+             .x = freq.abund.milk.tax$freq.mean.nz,
+             .fun = mean,
+             .desc = TRUE
+             )
+
+
+mean.freq.plot.milk.genus <- ggboxplot(freq.abund.milk.tax,
+                                 x="best_genus_other",
+                                 y="freq.mean.nz",
+                                 fill = "best_genus_other",
+                                 error.plot = "pointrange",
+                                 add = "mean_sd",
+                                 #legend = "none",
+                                 palette = col_fil) +
+  #stat_compare_means(method = "anova") +      # Add global p-value
+  stat_compare_means(label = "p.signif", method = "wilcox.test", ref.group = "Other") +
+  theme_classic() +
+  theme(legend.position = "none",
+        strip.background = element_rect(colour = "white", fill = "white"),
+        axis.text.x=element_text(angle = -45, vjust = 0.8, hjust = 0)
+  ) +
+  xlab("") +
+  ylab("ASV persistence") +
+  scale_y_continuous(expand = expansion(mult = 0.1))
+
+sl(mean.freq.plot.milk.genus,mean.freq.plot.milk.genus,overwrite = T)
+
+```
+
+### Faeces
+
+#### By genus
+
+```{r, warning = F}
+#Get order of means per group
+
+bymean <- with(freq.abund.faeces.tax, reorder(best_genus_other, freq.mean.nz, sum))
+#bymean
+
+freq.abund.faeces.tax %>%
+  group_by(best_genus_other) %>%
+  dplyr::summarise(mean = count(freq.mean.nz))
+
+
+freq.abund.faeces.tax$best_genus_other <- fct_reorder(.f = freq.abund.faeces.tax$best_genus_other,
+             .x = freq.abund.faeces.tax$freq.mean.nz,
+             .fun = mean,
+             .desc = TRUE
+             )
+
+
+mean.freq.plot.faeces.genus <- ggboxplot(ungroup(freq.abund.faeces.tax),
+                                 x="best_genus_other",
+                                 y="freq.mean.nz",
+                                 fill = "best_genus_other",
+                                 error.plot = "pointrange",
+                                 add = c("mean_sd"),
+                                 #legend = "none",
+                                 palette = col_fil) +
+  #stat_compare_means(method = "anova") +      # Add global p-value
+  stat_compare_means(label = "p.signif", method = "wilcox.test", ref.group = "Other") +
+  theme_classic() +
+  theme(legend.position = "none",
+        strip.background = element_rect(colour = "white", fill = "white"),
+        axis.text.x=element_text(angle = -45, vjust = 0.8, hjust = 0)
+  ) +
+  ylim(0,1.05) +
+  xlab("") +
+  ylab("ASV persistence") +
+  scale_y_continuous(expand = expansion(mult = 0.1))
+
+# mean.freq.plot.faeces.genus
+
+sl(mean.freq.plot.faeces.genus,mean.freq.plot.faeces.genus,overwrite = T)
+
+ggarrange(mean.freq.plot.milk.genus,mean.freq.plot.faeces.genus,nrow=2)
+```
+
+
+# Shao
+
+## Functions 
+
+```{r}
+ps_to_pa <- function(ps, suffix = "_inf", ...) {
+  ps %>%
+    ps_to_df() %>%
+    pivot_longer(all_of(taxa_names(ps)), names_to = "ASV", values_to = "RA") %>%
+    mutate(pa = if_else(RA >= 0.001, 1, 0)) %>%
+    select(ID, sample_id, ASV, pa, ...) %>%
+    rename_with(~str_c(., suffix), !c(ASV, ID))
+}
+
+#pa_test <- ps_to_pa(ps)
+
+get_total_transfer <- function(ps_obj) {
+
+  pa_mother <- ps_obj %>%
+    subset_samples(Origin == "Mother" & !Niche == "Skin") %>%
+    #subset_samples(!only_mother) %>%
+    ps_to_pa(., "_mother", Niche) %>%
+    filter(pa_mother == "1") # select all ASVs present in mothers (i.e. at least once)
+  
+  pa_inf <- ps_obj %>%
+    subset_samples(Origin == "Infant"& Niche != "Skin") %>%
+    ps_to_pa(., "_inf", Niche, Birth.mode) %>% #, Days
+    rename_with(~str_remove(., "_inf"), starts_with("Birth.mode"))
+
+  total_transfer <- inner_join(pa_mother, pa_inf, by = c("ID", "ASV")) %>%
+    unite(pa_mother, pa_inf, col = "pa_mi", sep = "_", remove = F) %>%
+    mutate(trans_yn = if_else(pa_mi == "1_1", "yes", "no")) %>%
+    unite(col = "niche_from_to", Niche_mother, Niche_inf, sep = "-", remove = F)
+  
+  return(total_transfer)
+}
+
+
+#total_transfer_test <- get_total_transfer(ps)
+
+
+get_trans_rate <- function(total_transfer, ...) {
+  total_transfer %>% 
+    dplyr::count(ASV, ID, Niche_mother, Niche_inf, niche_from_to, trans_yn, ...) %>%
+    # number of transfers (yes/no) for each ASV/subject
+    pivot_wider(names_from = trans_yn, values_from = n, values_fill = 0, names_prefix = "trans_") %>%
+    mutate(any_trans_yn = if_else(trans_yes == 0 & trans_no > 0, "no", "yes")) %>%
+    dplyr::count(ASV, Niche_mother, Niche_inf, niche_from_to, any_trans_yn, ..., name = "n_any") %>% #, ...
+    # number of [any] transfers for each ASV/subject
+    pivot_wider(names_from = any_trans_yn, values_from = n_any, values_fill = 0, names_prefix = "any_trans_") %>%
+    mutate(mat_presence = any_trans_yes + any_trans_no,
+           trans_rate = any_trans_yes / (mat_presence))
+}
+
+
+#trans_rate_test <- get_trans_rate(total_transfer_test)
+
+format_fisher_p <- function(fisher_p) {
+  
+  get_trans_rate <- function(data, bm = "C-section") {
+    data %>%
+      filter(Birth.mode == bm) %>%
+      pull(trans_rate)
+  }
+   
+  fisher_p %>% 
+    group_by(niche_from_to) %>% 
+    mutate(col = map_chr(data, ~ if_else(get_trans_rate(.x, "C-section") > get_trans_rate(.x, "Vaginal"), "sc", "vag")),
+           q.value = p.adjust(p.value, method = "BH"),
+           label = glue::glue("_p_ = {scales::pvalue_format()(p.value)}<br> _q_ = {scales::pvalue_format()(q.value)}")) %>%
+    filter(p.value < 0.1) 
+}
+
+```
+
+## Plot - Mother to infant
+
+### Milk vs infant faeces days 30-90
+
+```{r, ow = '100%', w = 10.5, h = 7}
+ps.sub <- subset_samples(PSB, Sample.type %in% c("Milk","Faecal sample") & Days %in% c(30,60,90))
+
+df <- data.frame(ps.sub@tax_table)
+df[df==""] <- NA
+df$tax <- apply(df, 1, function(x) tail(na.omit(x), 1))
+taxa_names(ps.sub )<- paste0(
+  df$tax,
+  str_remove(taxa_names(ps.sub),"OTU")
+)
+ 
+#Overwrite ID with RC_ID(time sensitive ID)
+ps.sub@sam_data$ID <- ps.sub@sam_data$RCID
+
+count <- data.frame(ps@sam_data) %>% dplyr::count(ID, sort = TRUE) %>% filter(n>1)
+
+PSB.RA <- transform_sample_counts(
+  ps.sub,
+  function(x) x / sum(x))
+
+ps <- PSB.RA #subset_samples(PSB.RA, ID %in% count$ID)
+
+sl(total_transfer_milk_faec, get_total_transfer(ps), overwrite = T) 
+
+total_transfer <- total_transfer_milk_faec
+
+str(subset(total_transfer, trans_yn == "yes"))
+
+#col_bm <- cols_mb$birth_mode
+
+#names(col_bm) <- NULL
+levels(as.factor(total_transfer$niche_from_to))
+niche_sel = c("Milk-Infant faeces")
+
+trans_rate <- get_trans_rate(total_transfer, Birth.mode)
+
+ASV_sel_df <- get_trans_rate(total_transfer) %>% 
+  filter(niche_from_to %in% niche_sel) %>% 
+  group_by(niche_from_to) %>% 
+  mutate(max_mat_presence = max(mat_presence)) %>% 
+  filter(mat_presence > (0.1 * max_mat_presence)) %>% # Shao: > 10 pairs
+  slice_max(trans_rate, n = 15, with_ties = F) # ties for vag-NP
+
+total_trans <- left_join(
+  ASV_sel_df %>% 
+    select(niche_from_to, ASV),
+  trans_rate, by = c("niche_from_to", "ASV")
+  ) %>% 
+  add_count(ASV, wt = mat_presence, name = "total_mat_presence") %>%
+  ungroup() %>% 
+  mutate(ASV = format_OTU(ASV), #%>% fct_reorder(., mat_presence))
+         niche_from_to = fct_relevel(niche_from_to, niche_sel)) %>% #"vag-skin", 
+  drop_na(Birth.mode)
+ 
+total_trans_reordered <- total_trans %>% 
+  mutate(ASV = tidytext::reorder_within(ASV, mat_presence, niche_from_to))
+
+shao_fisher_p <- function(total_trans) {
+
+  total_trans %>%
+    group_by(ASV, niche_from_to) %>%
+    nest() %>% 
+    mutate(fit = map(data, ~fisher.test(.x %>% select(any_trans_no, any_trans_yes))),
+           tidied = map(fit, broom::tidy)) %>%
+    unnest(tidied)
+}
+
+shao_facet <- total_trans_reordered %>% 
+  ggplot(aes(x = mat_presence, y = ASV, color = Birth.mode)) +
+    geom_col(position = position_dodge(), fill = "white", width = 0.8) +
+    scale_color_manual(name = "Birth mode", labels = list(sc = "C-section", vag = "Vaginal birth"), values = col_fil) +
+    scale_x_continuous(expand = expansion(mult = c(0.02, 0.5))) +
+    geom_col(data = total_trans_reordered, 
+             aes(x = any_trans_yes, y = ASV, fill = Birth.mode), 
+             position = position_dodge(), inherit.aes = F, width = 0.8) +
+    scale_fill_manual(name = "Birth mode", labels = list(sc = "C-section", vag = "Vaginal birth"), values = col_fil) +
+    facet_wrap(~ niche_from_to, scales = "free", nrow = 3) +
+    tidytext::scale_y_reordered(expand = expansion(mult = c(0.08, 0.08))) +
+    labs(x = "Number of mother-infant pairs") +
+    theme(axis.text.y = element_markdown())
+
+shao_facet
+
+# add p-values
+
+# p_data <- shao_fisher_p(total_trans_reordered) %>% ungroup()
+# 
+# shao_facet_p <- shao_facet + 
+#   geom_richtext(data = p_data %>% format_fisher_p, aes(x = Inf, y = ASV, label = label, color = col), inherit.aes = F, hjust = "right", fill = NA, label.color = NA, size = 3, lineheight = .8)
+#   
+# legend_cols <- total_trans %>%
+#     ggplot(aes(x = ASV, y = mat_presence, fill = Birth.mode)) + #as.numeric(interaction(birth_mode, ASV))
+#       geom_col(color = "black") +
+#       scale_fill_manual(name = "Transmission", labels = list(`C-section` = "Transmission", `Vaginal` = "No transmission"), values = c("black", "white"))
+# 
+# shao_comb <- cowplot::plot_grid(
+#   shao_facet_p + theme(legend.position = "none"),
+#   cowplot::plot_grid(
+#     NULL,
+#     cowplot::get_legend(shao_facet_p),
+#     cowplot::get_legend(legend_cols),
+#     NULL,
+#     ncol = 1, align = "v",
+#     rel_heights  = c(0.3, 0.2, 0.2, 0.3)),
+#   nrow = 1, rel_widths = c(0.85, 0.15))
+# 
+# #sl(shao_comb, shao_comb, overwrite = T)
+# shao_comb
+
+```
+
+### Milk cs infant faeces - day3 milk vs day 30 infant faeces
+
+```{r, ow = '100%', w = 10.5, h = 7}
+ps.sub <- subset_samples(PSB, Sample.type %in% c("Milk","Faecal sample") & Days %in% c(30,60,90))
+
+df <- data.frame(ps.sub@tax_table)
+df[df==""] <- NA
+df$tax <- apply(df, 1, function(x) tail(na.omit(x), 1))
+taxa_names(ps.sub )<- paste0(
+  df$tax,
+  str_remove(taxa_names(ps.sub),"OTU")
+)
+
+#Overwrite ID with RC_ID(time sensitive ID)
+#ps.sub@sam_data$ID <- ps.sub@sam_data$RCID
+
+count <- data.frame(ps.sub @sam_data) %>% dplyr::count(ID, sort = TRUE) %>% filter(n>1)
+
+PSB.RA <- transform_sample_counts(
+  ps.sub,
+  function(x) x / sum(x))
+
+ps <- subset_samples(PSB.RA, ID %in% count$ID)
+
+sl(total_transfer_milk_faec, get_total_transfer(ps), overwrite = T) 
+
+total_transfer <- total_transfer_milk_faec
+
+str(subset(total_transfer, trans_yn == "yes"))
+
+#col_bm <- cols_mb$birth_mode
+
+#names(col_bm) <- NULL
+levels(as.factor(total_transfer$niche_from_to))
+niche_sel = c("Milk-Infant faeces")
+
+trans_rate <- get_trans_rate(total_transfer, Birth.mode)
+
+ASV_sel_df <- get_trans_rate(total_transfer) %>% 
+  filter(niche_from_to %in% niche_sel) %>% 
+  group_by(niche_from_to) %>% 
+  mutate(max_mat_presence = max(mat_presence)) %>% 
+  filter(mat_presence > (0.1 * max_mat_presence)) %>% # Shao: > 10 pairs
+  slice_max(trans_rate, n = 15, with_ties = F) # ties for vag-NP
+
+total_trans <- left_join(
+  ASV_sel_df %>% 
+    select(niche_from_to, ASV),
+  trans_rate, by = c("niche_from_to", "ASV")
+  ) %>% 
+  add_count(ASV, wt = mat_presence, name = "total_mat_presence") %>%
+  ungroup() %>% 
+  mutate(ASV = format_OTU(ASV), #%>% fct_reorder(., mat_presence))
+         niche_from_to = fct_relevel(niche_from_to, niche_sel)) %>% #"vag-skin", 
+  drop_na(Birth.mode)
+ 
+total_trans_reordered <- total_trans %>% 
+  mutate(ASV = tidytext::reorder_within(ASV, mat_presence, niche_from_to))
+
+shao_fisher_p <- function(total_trans) {
+
+  total_trans %>%
+    group_by(ASV, niche_from_to) %>%
+    nest() %>% 
+    mutate(fit = map(data, ~fisher.test(.x %>% select(any_trans_no, any_trans_yes))),
+           tidied = map(fit, broom::tidy)) %>%
+    unnest(tidied)
+}
+
+shao_facet <- total_trans_reordered %>% 
+  ggplot(aes(x = mat_presence, y = ASV, color = Birth.mode)) +
+    geom_col(position = position_dodge(), fill = "white", width = 0.8) +
+    scale_color_manual(name = "Birth mode", labels = list(sc = "C-section", vag = "Vaginal birth"), values = col_fil) +
+    scale_x_continuous(expand = expansion(mult = c(0.02, 0.5))) +
+    geom_col(data = total_trans_reordered, 
+             aes(x = any_trans_yes, y = ASV, fill = Birth.mode), 
+             position = position_dodge(), inherit.aes = F, width = 0.8) +
+    scale_fill_manual(name = "Birth mode", labels = list(sc = "C-section", vag = "Vaginal birth"), values = col_fil) +
+    facet_wrap(~ niche_from_to, scales = "free", nrow = 3) +
+    tidytext::scale_y_reordered(expand = expansion(mult = c(0.08, 0.08))) +
+    labs(x = "Number of mother-infant pairs") +
+    theme(axis.text.y = element_markdown())
+
+#shao_facet
+
+# add p-values
+p_data <- shao_fisher_p(total_trans_reordered) %>% ungroup()
+
+shao_facet_p <- shao_facet + 
+  geom_richtext(data = p_data %>% format_fisher_p, aes(x = Inf, y = ASV, label = label, color = col), inherit.aes = F, hjust = "right", fill = NA, label.color = NA, size = 3, lineheight = .8)
+  
+legend_cols <- total_trans %>%
+    ggplot(aes(x = ASV, y = mat_presence, fill = Birth.mode)) + #as.numeric(interaction(birth_mode, ASV))
+      geom_col(color = "black") +
+      scale_fill_manual(name = "Transmission", labels = list(`C-section` = "Transmission", `Vaginal` = "No transmission"), values = c("black", "white"))
+
+shao_comb <- cowplot::plot_grid(
+  shao_facet_p + theme(legend.position = "none"),
+  cowplot::plot_grid(
+    NULL,
+    cowplot::get_legend(shao_facet_p),
+    cowplot::get_legend(legend_cols),
+    NULL,
+    ncol = 1, align = "v",
+    rel_heights  = c(0.3, 0.2, 0.2, 0.3)),
+  nrow = 1, rel_widths = c(0.85, 0.15))
+
+#sl(shao_comb, shao_comb, overwrite = T)
+shao_comb
+
+```
+
+### All samples with day 3 milk and day 30 faeces
+
+```{r, ow = '100%', w = 10.5, h = 7}
+ps.sub <- subset_samples(PSB, !Sample.type %in% c("Faecal sample") & !Days %in% c(30,60,90) | Sample.type %in% c("Faecal sample") & Days %in% 30)
+
+df <- data.frame(ps.sub@tax_table)
+df[df==""] <- NA
+df$tax <- apply(df, 1, function(x) tail(na.omit(x), 1))
+taxa_names(ps.sub)<- paste0(
+  df$tax,
+  str_remove(taxa_names(ps.sub),"OTU")
+)
+
+count <- meta.dat %>% dplyr::count(ID, sort = TRUE) %>% filter(n>1)
+PSB.RA <- transform_sample_counts(
+  ps.sub,
+  function(x) x / sum(x))
+
+ps <- subset_samples(PSB.RA, ID %in% count$ID)
+
+sl(total_transfer_early, get_total_transfer(ps), overwrite = T) 
+
+str(subset(total_transfer_early, trans_yn == "yes"))
+
+total_transfer <- total_transfer_early
+
+str(subset(total_transfer, trans_yn == "yes"))
+
+#col_bm <- cols_mb$birth_mode
+
+#names(col_bm) <- NULL
+levels(as.factor(total_transfer$niche_from_to))
+
+trans_rate <- get_trans_rate(total_transfer, Birth.mode)
+
+ASV_sel_df <- get_trans_rate(total_transfer) %>% 
+  #filter(niche_from_to %in% niche_sel) %>% 
+  group_by(niche_from_to) %>% 
+  mutate(max_mat_presence = max(mat_presence)) %>% 
+  filter(mat_presence > (0.1 * max_mat_presence)) %>% # Shao: > 10 pairs
+  slice_max(trans_rate, n = 15, with_ties = F) # ties for vag-NP
+
+total_trans <- left_join(
+  ASV_sel_df %>% 
+    select(niche_from_to, ASV),
+  trans_rate, by = c("niche_from_to", "ASV")
+  ) %>% 
+  add_count(ASV, wt = mat_presence, name = "total_mat_presence") %>%
+  ungroup() %>% 
+  mutate(ASV = format_OTU(ASV), #%>% fct_reorder(., mat_presence))
+         niche_from_to = fct_relevel(niche_from_to, niche_sel)) %>% #"vag-skin", 
+  drop_na(Birth.mode)
+ 
+total_trans_reordered <- total_trans %>% 
+  mutate(ASV = tidytext::reorder_within(ASV, mat_presence, niche_from_to))
+
+shao_fisher_p <- function(total_trans) {
+
+  total_trans %>%
+    group_by(ASV, niche_from_to) %>%
+    nest() %>% 
+    mutate(fit = map(data, ~fisher.test(.x %>% select(any_trans_no, any_trans_yes))),
+           tidied = map(fit, broom::tidy)) %>%
+    unnest(tidied)
+}
+
+shao_facet <- total_trans_reordered %>% 
+  ggplot(aes(x = mat_presence, y = ASV, color = Birth.mode)) +
+    geom_col(position = position_dodge(), fill = "white", width = 0.8) +
+    scale_color_manual(name = "Birth mode", labels = list(sc = "C-section", vag = "Vaginal birth"), values = col_fil) +
+    scale_x_continuous(expand = expansion(mult = c(0.02, 0.5))) +
+    geom_col(data = total_trans_reordered, 
+             aes(x = any_trans_yes, y = ASV, fill = Birth.mode), 
+             position = position_dodge(), inherit.aes = F, width = 0.8) +
+    scale_fill_manual(name = "Birth mode", labels = list(sc = "C-section", vag = "Vaginal birth"), values = col_fil) +
+    facet_wrap(~ niche_from_to, scales = "free", nrow = 3) +
+    tidytext::scale_y_reordered(expand = expansion(mult = c(0.08, 0.08))) +
+    labs(x = "Number of mother-infant pairs") +
+    theme(axis.text.y = element_markdown())
+
+shao_facet
+
+# add p-values
+
+# p_data <- shao_fisher_p(total_trans_reordered) %>% ungroup()
+# 
+# shao_facet_p <- shao_facet + 
+#   geom_richtext(data = p_data %>% format_fisher_p, aes(x = Inf, y = ASV, label = label, color = col), inherit.aes = F, hjust = "right", fill = NA, label.color = NA, size = 3, lineheight = .8)
+#   
+# legend_cols <- total_trans %>%
+#     ggplot(aes(x = ASV, y = mat_presence, fill = Birth.mode)) + #as.numeric(interaction(birth_mode, ASV))
+#       geom_col(color = "black") +
+#       scale_fill_manual(name = "Transmission", labels = list(`C-section` = "Transmission", `Vaginal` = "No transmission"), values = c("black", "white"))
+# 
+# shao_comb <- cowplot::plot_grid(
+#   shao_facet_p + theme(legend.position = "none"),
+#   cowplot::plot_grid(
+#     NULL,
+#     #cowplot::get_legend(shao_facet_p),
+#     cowplot::get_legend(legend_cols),
+#     NULL,
+#     ncol = 1, align = "v",
+#     rel_heights  = c(0.3, 0.2, 0.2, 0.3)),
+#   nrow = 1, rel_widths = c(0.85, 0.15))
+# 
+# sl(shao_comb, shao_comb, overwrite = T)
+# shao_comb
+```
+
+## Plot - Infant to mother
+
+### Milk vs infant faeces days 30-90
+
+```{r, ow = '100%', w = 10.5, h = 7}
+ps.sub <- subset_samples(PSB, Sample.type %in% c("Milk","Faecal sample") & Days %in% c(30,60,90))
+# Reverse infant-mother encoding to calculate mother-infant transmission instead
+ps.sub@sam_data$Origin <- dplyr::recode(ps.sub@sam_data$Origin, Infant = "Mother", Mother = "Infant")
+
+df <- data.frame(ps.sub@tax_table)
+df[df==""] <- NA
+df$tax <- apply(df, 1, function(x) tail(na.omit(x), 1))
+taxa_names(ps.sub )<- paste0(
+  df$tax,
+  str_remove(taxa_names(ps.sub),"OTU")
+)
+ 
+#Overwrite ID with RC_ID(time sensitive ID)
+ps.sub@sam_data$ID <- ps.sub@sam_data$RCID
+
+count <- data.frame(ps.sub@sam_data) %>% dplyr::count(ID, sort = TRUE) %>% filter(n>1)
+
+PSB.RA <- transform_sample_counts(
+  ps.sub,
+  function(x) x / sum(x))
+
+ps <- PSB.RA #subset_samples(PSB.RA, ID %in% count$ID)
+
+sl(total_transfer_faec_milk, get_total_transfer(ps), overwrite = T) 
+
+total_transfer <- total_transfer_faec_milk
+
+str(subset(total_transfer, trans_yn == "yes"))
+
+#col_bm <- cols_mb$birth_mode
+
+#names(col_bm) <- NULL
+levels(as.factor(total_transfer$niche_from_to))
+niche_sel = c("Milk-Infant faeces")
+
+trans_rate <- get_trans_rate(total_transfer, Birth.mode)
+
+ASV_sel_df <- get_trans_rate(total_transfer) %>% 
+  #filter(niche_from_to %in% niche_sel) %>% 
+  group_by(niche_from_to) %>% 
+  mutate(max_mat_presence = max(mat_presence)) %>% 
+  filter(mat_presence > (0.1 * max_mat_presence)) %>% # Shao: > 10 pairs
+  slice_max(trans_rate, n = 15, with_ties = F) # ties for vag-NP
+
+total_trans <- left_join(
+  ASV_sel_df %>% 
+    select(niche_from_to, ASV),
+  trans_rate, by = c("niche_from_to", "ASV")
+  ) %>% 
+  add_count(ASV, wt = mat_presence, name = "total_mat_presence") %>%
+  ungroup() %>% 
+  mutate(ASV = format_OTU(ASV), #%>% fct_reorder(., mat_presence))
+         niche_from_to = fct_relevel(niche_from_to, niche_sel)) %>% #"vag-skin", 
+  drop_na(Birth.mode)
+ 
+total_trans_reordered <- total_trans %>% 
+  mutate(ASV = tidytext::reorder_within(ASV, mat_presence, niche_from_to))
+
+shao_fisher_p <- function(total_trans) {
+
+  total_trans %>%
+    group_by(ASV, niche_from_to) %>%
+    nest() %>% 
+    mutate(fit = map(data, ~fisher.test(.x %>% select(any_trans_no, any_trans_yes))),
+           tidied = map(fit, broom::tidy)) %>%
+    unnest(tidied)
+}
+
+shao_facet <- total_trans_reordered %>% 
+  ggplot(aes(x = mat_presence, y = ASV, color = Birth.mode)) +
+    geom_col(position = position_dodge(), fill = "white", width = 0.8) +
+    scale_color_manual(name = "Birth mode", labels = list(sc = "C-section", vag = "Vaginal birth"), values = col_fil) +
+    scale_x_continuous(expand = expansion(mult = c(0.02, 0.5))) +
+    geom_col(data = total_trans_reordered, 
+             aes(x = any_trans_yes, y = ASV, fill = Birth.mode), 
+             position = position_dodge(), inherit.aes = F, width = 0.8) +
+    scale_fill_manual(name = "Birth mode", labels = list(sc = "C-section", vag = "Vaginal birth"), values = col_fil) +
+    facet_wrap(~ niche_from_to, scales = "free", nrow = 3) +
+    tidytext::scale_y_reordered(expand = expansion(mult = c(0.08, 0.08))) +
+    labs(x = "Number of mother-infant pairs") +
+    theme(axis.text.y = element_markdown())
+
+shao_facet
+
+# add p-values
+
+p_data <- shao_fisher_p(total_trans_reordered) %>% ungroup()
+
+shao_facet_p <- shao_facet + 
+  geom_richtext(data = p_data %>% format_fisher_p, aes(x = Inf, y = ASV, label = label, color = col), inherit.aes = F, hjust = "right", fill = NA, label.color = NA, size = 3, lineheight = .8)
+  
+legend_cols <- total_trans %>%
+    ggplot(aes(x = ASV, y = mat_presence, fill = Birth.mode)) + #as.numeric(interaction(birth_mode, ASV))
+      geom_col(color = "black") +
+      scale_fill_manual(name = "Transmission", labels = list(`C-section` = "Transmission", `Vaginal` = "No transmission"), values = c("black", "white"))
+
+shao_comb <- cowplot::plot_grid(
+  shao_facet_p + theme(legend.position = "none"),
+  cowplot::plot_grid(
+    NULL,
+    cowplot::get_legend(shao_facet_p),
+    cowplot::get_legend(legend_cols),
+    NULL,
+    ncol = 1, align = "v",
+    rel_heights  = c(0.3, 0.2, 0.2, 0.3)),
+  nrow = 1, rel_widths = c(0.85, 0.15))
+
+#sl(shao_comb, shao_comb, overwrite = T)
+shao_comb
+```
+
+### Milk cs infant faeces - day3 milk vs day 30 infant faeces
+
+```{r, ow = '100%', w = 10.5, h = 7}
+ps.sub <- subset_samples(PSB, Sample.type %in% c("Milk","Faecal sample") & Days %in% c(30,60,90))
+# Reverse infant-mother encoding to calculate mother-infant transmission instead
+ps.sub@sam_data$Origin <- dplyr::recode(ps.sub@sam_data$Origin, Infant = "Mother", Mother = "Infant")
+
+df <- data.frame(ps.sub@tax_table)
+df[df==""] <- NA
+df$tax <- apply(df, 1, function(x) tail(na.omit(x), 1))
+taxa_names(ps.sub )<- paste0(
+  df$tax,
+  str_remove(taxa_names(ps.sub),"OTU")
+)
+
+#Overwrite ID with RC_ID(time sensitive ID)
+#ps.sub@sam_data$ID <- ps.sub@sam_data$RCID
+
+count <- data.frame(ps.sub @sam_data) %>% dplyr::count(ID, sort = TRUE) %>% filter(n>1)
+
+PSB.RA <- transform_sample_counts(
+  ps.sub,
+  function(x) x / sum(x))
+
+ps <- subset_samples(PSB.RA, ID %in% count$ID)
+
+sl(total_transfer_milk_faec_early, get_total_transfer(ps), overwrite = T) 
+
+total_transfer <- total_transfer_milk_faec_early
+
+str(subset(total_transfer, trans_yn == "yes"))
+
+#col_bm <- cols_mb$birth_mode
+
+#names(col_bm) <- NULL
+levels(as.factor(total_transfer$niche_from_to))
+niche_sel = c("Milk-Infant faeces")
+
+trans_rate <- get_trans_rate(total_transfer, Birth.mode)
+
+ASV_sel_df <- get_trans_rate(total_transfer) %>% 
+  #filter(niche_from_to %in% niche_sel) %>% 
+  group_by(niche_from_to) %>% 
+  mutate(max_mat_presence = max(mat_presence)) %>% 
+  filter(mat_presence > (0.1 * max_mat_presence)) %>% # Shao: > 10 pairs
+  slice_max(trans_rate, n = 15, with_ties = F) # ties for vag-NP
+
+total_trans <- left_join(
+  ASV_sel_df %>% 
+    select(niche_from_to, ASV),
+  trans_rate, by = c("niche_from_to", "ASV")
+  ) %>% 
+  add_count(ASV, wt = mat_presence, name = "total_mat_presence") %>%
+  ungroup() %>% 
+  mutate(ASV = format_OTU(ASV), #%>% fct_reorder(., mat_presence))
+         niche_from_to = fct_relevel(niche_from_to, niche_sel)) %>% #"vag-skin", 
+  drop_na(Birth.mode)
+ 
+total_trans_reordered <- total_trans %>% 
+  mutate(ASV = tidytext::reorder_within(ASV, mat_presence, niche_from_to))
+
+shao_fisher_p <- function(total_trans) {
+
+  total_trans %>%
+    group_by(ASV, niche_from_to) %>%
+    nest() %>% 
+    mutate(fit = map(data, ~fisher.test(.x %>% select(any_trans_no, any_trans_yes))),
+           tidied = map(fit, broom::tidy)) %>%
+    unnest(tidied)
+}
+
+shao_facet <- total_trans_reordered %>% 
+  ggplot(aes(x = mat_presence, y = ASV, color = Birth.mode)) +
+    geom_col(position = position_dodge(), fill = "white", width = 0.8) +
+    scale_color_manual(name = "Birth mode", labels = list(sc = "C-section", vag = "Vaginal birth"), values = col_fil) +
+    scale_x_continuous(expand = expansion(mult = c(0.02, 0.5))) +
+    geom_col(data = total_trans_reordered, 
+             aes(x = any_trans_yes, y = ASV, fill = Birth.mode), 
+             position = position_dodge(), inherit.aes = F, width = 0.8) +
+    scale_fill_manual(name = "Birth mode", labels = list(sc = "C-section", vag = "Vaginal birth"), values = col_fil) +
+    facet_wrap(~ niche_from_to, scales = "free", nrow = 3) +
+    tidytext::scale_y_reordered(expand = expansion(mult = c(0.08, 0.08))) +
+    labs(x = "Number of mother-infant pairs") +
+    theme(axis.text.y = element_markdown())
+
+shao_facet
+
+# add p-values
+
+p_data <- shao_fisher_p(total_trans_reordered) %>% ungroup()
+
+shao_facet_p <- shao_facet + 
+  geom_richtext(data = p_data %>% format_fisher_p, aes(x = Inf, y = ASV, label = label, color = col), inherit.aes = F, hjust = "right", fill = NA, label.color = NA, size = 3, lineheight = .8)
+  
+legend_cols <- total_trans %>%
+    ggplot(aes(x = ASV, y = mat_presence, fill = Birth.mode)) + #as.numeric(interaction(birth_mode, ASV))
+      geom_col(color = "black") +
+      scale_fill_manual(name = "Transmission", labels = list(`C-section` = "Transmission", `Vaginal` = "No transmission"), values = c("black", "white"))
+
+shao_comb <- cowplot::plot_grid(
+  shao_facet_p + theme(legend.position = "none"),
+  cowplot::plot_grid(
+    NULL,
+    cowplot::get_legend(shao_facet_p),
+    cowplot::get_legend(legend_cols),
+    NULL,
+    ncol = 1, align = "v",
+    rel_heights  = c(0.3, 0.2, 0.2, 0.3)),
+  nrow = 1, rel_widths = c(0.85, 0.15))
+
+#sl(shao_comb, shao_comb, overwrite = T)
+shao_comb
+
+```
+
+### All samples with day 3 milk and day 30 faeces
+
+```{r, ow = '100%', w = 10.5, h = 7}
+ps.sub <- subset_samples(PSB, !Sample.type %in% c("Faecal sample") & !Days %in% c(30,60,90) | Sample.type %in% c("Faecal sample") & Days %in% 30)
+# Reverse infant-mother encoding to calculate mother-infant transmission instead
+ps.sub@sam_data$Origin <- dplyr::recode(ps.sub@sam_data$Origin, Infant = "Mother", Mother = "Infant")
+
+df <- data.frame(ps.sub@tax_table)
+df[df==""] <- NA
+df$tax <- apply(df, 1, function(x) tail(na.omit(x), 1))
+taxa_names(ps.sub)<- paste0(
+  df$tax,
+  str_remove(taxa_names(ps.sub),"OTU")
+)
+
+count <- meta.dat %>% dplyr::count(ID, sort = TRUE) %>% filter(n>1)
+PSB.RA <- transform_sample_counts(
+  ps.sub,
+  function(x) x / sum(x))
+
+ps <- subset_samples(PSB.RA, ID %in% count$ID)
+
+sl(total_transfer_all_inf_to_mother, get_total_transfer(ps), overwrite = T) 
+
+str(subset(total_transfer_early, trans_yn == "yes"))
+
+total_transfer <- total_transfer_all_inf_to_mother
+
+#col_bm <- cols_mb$birth_mode
+
+#names(col_bm) <- NULL
+levels(as.factor(total_transfer$niche_from_to))
+
+trans_rate <- get_trans_rate(total_transfer, Birth.mode)
+
+ASV_sel_df <- get_trans_rate(total_transfer) %>% 
+  #filter(niche_from_to %in% niche_sel) %>% 
+  group_by(niche_from_to) %>% 
+  mutate(max_mat_presence = max(mat_presence)) %>% 
+  filter(mat_presence > (0.1 * max_mat_presence)) %>% # Shao: > 10 pairs
+  slice_max(trans_rate, n = 15, with_ties = F) # ties for vag-NP
+
+total_trans <- left_join(
+  ASV_sel_df %>% 
+    select(niche_from_to, ASV),
+  trans_rate, by = c("niche_from_to", "ASV")
+  ) %>% 
+  add_count(ASV, wt = mat_presence, name = "total_mat_presence") %>%
+  ungroup() %>% 
+  mutate(ASV = format_OTU(ASV), #%>% fct_reorder(., mat_presence))
+         niche_from_to = fct_relevel(niche_from_to, niche_sel)) %>% #"vag-skin", 
+  drop_na(Birth.mode)
+ 
+total_trans_reordered <- total_trans %>% 
+  mutate(ASV = tidytext::reorder_within(ASV, mat_presence, niche_from_to))
+
+shao_fisher_p <- function(total_trans) {
+
+  total_trans %>%
+    group_by(ASV, niche_from_to) %>%
+    nest() %>% 
+    mutate(fit = map(data, ~fisher.test(.x %>% select(any_trans_no, any_trans_yes))),
+           tidied = map(fit, broom::tidy)) %>%
+    unnest(tidied)
+}
+
+shao_facet <- total_trans_reordered %>% 
+  ggplot(aes(x = mat_presence, y = ASV, color = Birth.mode)) +
+    geom_col(position = position_dodge(), fill = "white", width = 0.8) +
+    scale_color_manual(name = "Birth mode", labels = list(sc = "C-section", vag = "Vaginal birth"), values = col_fil) +
+    scale_x_continuous(expand = expansion(mult = c(0.02, 0.5))) +
+    geom_col(data = total_trans_reordered, 
+             aes(x = any_trans_yes, y = ASV, fill = Birth.mode), 
+             position = position_dodge(), inherit.aes = F, width = 0.8) +
+    scale_fill_manual(name = "Birth mode", labels = list(sc = "C-section", vag = "Vaginal birth"), values = col_fil) +
+    facet_wrap(~ niche_from_to, scales = "free", nrow = 3) +
+    tidytext::scale_y_reordered(expand = expansion(mult = c(0.08, 0.08))) +
+    labs(x = "Number of mother-infant pairs") +
+    theme(axis.text.y = element_markdown())
+
+shao_facet
+
+# add p-values
+p_data <- shao_fisher_p(total_trans_reordered) %>% ungroup()
+
+shao_facet_p <- shao_facet + 
+  geom_richtext(data = p_data %>% format_fisher_p, aes(x = Inf, y = ASV, label = label, color = col), inherit.aes = F, hjust = "right", fill = NA, label.color = NA, size = 3, lineheight = .8)
+  
+legend_cols <- total_trans %>%
+    ggplot(aes(x = ASV, y = mat_presence, fill = Birth.mode)) + #as.numeric(interaction(birth_mode, ASV))
+      geom_col(color = "black") +
+      scale_fill_manual(name = "Transmission", labels = list(`C-section` = "Transmission", `Vaginal` = "No transmission"), values = c("black", "white"))
+
+shao_comb <- cowplot::plot_grid(
+  shao_facet_p + theme(legend.position = "none"),
+  cowplot::plot_grid(
+    NULL,
+    #cowplot::get_legend(shao_facet_p),
+    cowplot::get_legend(legend_cols),
+    NULL,
+    ncol = 1, align = "v",
+    rel_heights  = c(0.3, 0.2, 0.2, 0.3)),
+  nrow = 1, rel_widths = c(0.85, 0.15))
+
+sl(shao_comb, shao_comb, overwrite = T)
+shao_comb
+```
+
+### Between all sample types - using sum abundance for feacal + milk samples
+
+# Total transmissions
+
+PM: align code below with code above.
+
+```{r}
+sl(cum_transfer, {
+  pa_mother <- ps$RA %>%
+    subset_samples((mother_inf == "mother" & !niche == "bm") | (niche == "bm" & first_bm)) %>%
+    pres_abund_filter(pres = 1, abund = 0.001) %>%
+    ps_to_pa(., "_mother", niche)
+  
+  pa_inf <- ps$RA %>%
+    subset_samples(mother_inf == "infant") %>%
+    #pres_abund_filter(pres = 1, abund = 0.001) %>%
+    ps_to_pa(., "_inf", niche, birth_mode)
+  
+  cum_transfer <- inner_join(pa_mother, pa_inf, by = c("subject", "ASV")) %>%
+      filter(pa_mother == "1") %>%  # select all ASVs present in mothers (i.e. at least once)
+      unite(pa_mother, pa_inf, col = "pa_mi", sep = "_", remove = F)
+    
+  n_small <- cum_transfer %>% 
+    distinct(subject, birth_mode_inf) %>% 
+    count(birth_mode_inf) %>% 
+    slice_min(n) %>% 
+    pull(n) # 46
+  
+  downsampled <- cum_transfer %>%
+    distinct(subject, birth_mode_inf) %>% 
+    group_by(birth_mode_inf) %>%
+    slice_sample(n = n_small)
+    
+  cum_transfer <- cum_transfer %>%
+    filter(subject %in% downsampled$subject) %>%
+    count(pa_mi, niche_mother, niche_inf, birth_mode_inf) %>%
+    pivot_wider(names_from = "pa_mi", values_from = "n", values_fill = 0) %>% # transfer/no transfer of present ASVs
+    mutate(rate = `1_1` / (`1_0` + `1_1`))
+  
+  cum_transfer
+}, overwrite = FALSE)
+
+```
+
+We used a downsampled dataset to not obscure our transmission detection rate with a higher chance of co-occurrence of ASVs in a larger number of subjects (e.g. vaginal > sc). Here we used a set consisting of 46 sc and 46 random vaginally born infants.
+
+```{r, ow = '70%', w = 7, h = 7}
+cum_transfer_pval <- cum_transfer %>%
+  group_by(niche_mother, niche_inf) %>%
+  nest() %>%
+  mutate(fit = map(data, ~ .x %>% select(`1_0`, `1_1`) %>% fisher.test),
+         tidied = map(fit, broom::tidy)) %>%
+  unnest(tidied) %>%
+  group_by(niche_mother) %>%
+  mutate(q.value = p.adjust(p.value, method = "BH"),
+         q.value_sci = gsub("e", " × 10^", scales::scientific_format(digits = 2)(q.value)) %>% str_replace_all(., "10\\^-0", "10^-"),
+         qlab1 = if_else(q.value < 0.001, q.value_sci, scales::pvalue_format()(q.value)),
+         qlab2 = if_else(q.value < 0.05, glue::glue("_q_ = **{qlab1}**"), glue::glue("_q_ = {qlab1}")))
+
+cum_transfer %>%
+  #unite(c(niche_mother, niche_inf), col = "from_to", sep = " - ", remove = F) %>%
+  ggplot(aes(x = rate, y = niche_inf, color = birth_mode_inf)) +
+    geom_point() + 
+    facet_grid(niche_mother ~ ., scales = "free") +
+    geom_richtext(data = cum_transfer_pval, aes(y = niche_inf, label = qlab2), x = 0.4, hjust = "left", fill = NA, label.color = NA, size = 3, inherit.aes = F)
+```
+
+# By relative abundance
+
+# Personal ASV transmission 
+
+## functions
+
+```{r}
+ps_to_pa <- function(ps, suffix = "_inf", ...) {
+  ps %>%
+    ps_to_df() %>%
+    pivot_longer(all_of(taxa_names(ps)), names_to = "ASV", values_to = "RA") %>%
+    mutate(pa = if_else(RA >= 0.001, 1, 0)) %>%
+    select(subject, sample_id, ASV, pa, ...) %>%
+    rename_with(~str_c(., suffix), !c(ASV, subject))
+}
+
+ps_to_pa()
+
+get_rates <- function(mother_pa, inf_pa, ...) {
+  rates <- inner_join(mother_pa, inf_pa, by = c("subject", "ASV")) %>%
+    unite(pa_mother, pa_inf, col = "pa_mi", sep = "_", remove = F) %>%
+    filter(pa_mother == "1") %>% # select all ASVs present in mothers (i.e. at least once)
+    count(ASV, pa_mi, ...) %>%
+    pivot_wider(names_from = "pa_mi", values_from = "n", values_fill = 0) %>% # transfer/no transfer of present ASVs
+    mutate(
+      maternal_presence = (`1_0` + `1_1`),
+      rate = `1_1` / maternal_presence)# %>%
+    #filter(maternal_presence > 5)
+  return(rates)
+}
+
+rand_mother_pa <- function(mother_pa, seed = 666) {
+  set.seed(seed)
+  
+  mother_pa %>%
+    group_by(subject) %>%
+    nest() %>%
+    ungroup() %>%
+    mutate(subject = sample(subject, replace = F)) %>%
+    unnest(data)
+}
+
+rand_pa_wrapper <- function(mother_niche, infant_niche, infant_time, perm = 1000, seed = 22332) {
+  
+  ps_mother <- ps$RA %>%
+    prune_samples(sample_data(.)$mother_inf == "mother" & sample_data(.)$niche == mother_niche, .) %>%
+    pres_abund_filter(pres = 1, abund = 0.001)
+  
+  ps_inf <- ps$RA %>%
+    prune_samples(sample_data(.)$mother_inf == "infant" & sample_data(.)$niche == infant_niche & sample_data(.)$time == infant_time, .) %>%
+    pres_abund_filter(pres = 1, abund = 0.001)
+  
+  mother_pa <- ps_to_pa(ps_mother, "_mother")
+  inf_pa <- ps_to_pa(ps_inf, "_inf")
+  
+  true_rates <- get_rates(mother_pa, inf_pa)
+  
+  set.seed(seed)
+  rand_rates <- tibble(seed = sample.int(n = 1000, size = perm, replace = F)) %>% # 1000 pseudorandom seeds based on set.seed() above
+    mutate(mother_pa = map(seed, ~rand_mother_pa(mother_pa, .x)),
+           rates = map(mother_pa, ~get_rates(.x, inf_pa))) %>%
+    unnest(rates) %>%
+    select(-mother_pa)
+  return(list(true = true_rates, rand = rand_rates, mother_pa = mother_pa, inf_pa = inf_pa, n_mat = nsamples(ps_mother)))
+  
+}
+
+get_rates_Z <- function(rand_rates, true_rates, n_mat, mat_pres_rate = 0.2, mti_rate = 0.1) { 
+  # maternal presence rate = minimum 20% of maternal samples
+  # true mother-to-infant rate = minimum 10%
+  
+  rand_rates_df <- rand_rates %>%
+    group_by(ASV) %>%
+    summarise(mean_rate = mean(rate),
+              median_rate = median(rate),
+              min_rate = min(rate),
+              max_rate = max(rate),
+              sd_rate = sd(rate)) %>%
+    left_join(true_rates, by = "ASV") %>%
+    mutate(
+       diff = (rate - mean_rate),
+       Z_diff = diff / sd_rate) %>%
+    arrange(-diff) %>%
+    filter(maternal_presence >= floor(n_mat * mat_pres_rate) &
+           rate >= mti_rate)
+  
+  print(glue::glue("A total of {n_mat} maternal samples were included, therefore the minimum maternal presence for an ASV to be considered in this analysis is {floor(n_mat * mat_pres_rate)}."))
+  
+  return(rand_rates_df)
+}
+
+format_data <- function(data, ASVs) {
+  data %>%
+    filter(ASV %in% ASVs) %>%
+    mutate(ASV = fct_relevel(ASV, rev(ASVs))) %>%
+    arrange(ASV) %>%
+    mutate(ASV = format_OTU(ASV) %>% fct_inorder())
+}  
+  
+plot_rates <- function(rand_rates, true_rates, rates_Z, n = 20) {
+  
+  rand_rates %>%
+    format_data(rates_Z$ASV[1:n]) %>%
+    ggplot(aes(x = rate, y = ASV)) +
+      ggdist::stat_halfeye() +
+      geom_point(data = true_rates %>% format_data(rates_Z$ASV[1:n]), color = "black", fill = "grey80", shape = 21, size = 2.5) +
+    scale_x_continuous(expand = c(0.025, 0.025), limits = c(0, 1), labels = scales::percent, breaks = scales::pretty_breaks(5)) +
+    labs(x = "Transmission rate") +
+    theme(axis.text.y = element_markdown(), panel.grid.major.y = element_blank(), panel.grid.minor.y = element_blank())
+} 
+
+create_bg_list <- function(ps_mother) { 
+  mother_tax <- ps_mother %>%
+    tax_table() %>%
+    as.data.frame() %>%
+    add_count(family) %>%
+    filter(!is.na(family) & n >= 5) %>%
+    select(family, ASV)
+  
+  mother_tax_list <- split(mother_tax, mother_tax[,1], drop = F) %>%
+    map(~.x %>% pull(ASV))
+  return(mother_tax_list)
+}
+
+```
+
+## skin - skin (w1)
+
+```{r, ow = '80%', w = 8, h = 6}
+sl(skin_skin_w1_rates, rand_pa_wrapper("skin", "skin", "w1", perm = 1000, seed = 22331), overwrite = FALSE)
+
+skin_skin_w1_Z <- get_rates_Z(skin_skin_w1_rates$rand, skin_skin_w1_rates$true, skin_skin_w1_rates$n_mat) 
+
+sl(rand_skin_skin_w1_p, plot_rates(skin_skin_w1_rates$rand, skin_skin_w1_rates$true, skin_skin_w1_Z, n = 15), overwrite = T)
+rand_skin_skin_w1_p
+
+# skin_mother_tax_list <- ps$RA %>% 
+#  subset_samples(mother_inf == "mother" & niche == "skin") %>% 
+#  pres_abund_filter(pres = 1, abund = 0.001) %>%
+#  create_bg_list()
+# run_clusterProfiler(skin_skin_w1_Z %>% filter(Z_diff > 2) %>% pull(ASV), db_list = skin_mother_tax_list, p.adjustCutoff = 1, xlsx_name = "skin_skin_w1")
+```
+
+## skin - skin (w2)
+
+```{r, ow = '80%', w = 8, h = 6}
+sl(skin_skin_w2_rates, rand_pa_wrapper("skin", "skin", "w2", perm = 1000, seed = 22332), overwrite = FALSE)
+
+skin_skin_w2_Z <- get_rates_Z(skin_skin_w2_rates$rand, skin_skin_w2_rates$true, skin_skin_w2_rates$n_mat) 
+
+sl(rand_skin_skin_w2_p, plot_rates(skin_skin_w2_rates$rand, skin_skin_w2_rates$true, skin_skin_w2_Z, n = 15))
+rand_skin_skin_w2_p
+
+# run_clusterProfiler(skin_skin_w2_Z %>% filter(Z_diff > 2) %>% pull(ASV), db_list = skin_mother_tax_list, p.adjustCutoff = 1, xlsx_name = "skin_skin_w2")
+```
+
+## skin - skin (m1)
+
+```{r, ow = '80%', w = 8, h = 6}
+sl(skin_skin_m1_rates, rand_pa_wrapper("skin", "skin", "m1", perm = 1000, seed = 22333), overwrite = FALSE)
+
+skin_skin_m1_Z <- get_rates_Z(skin_skin_m1_rates$rand, skin_skin_m1_rates$true, skin_skin_m1_rates$n_mat) 
+
+sl(rand_skin_skin_m1_p, plot_rates(skin_skin_m1_rates$rand, skin_skin_m1_rates$true, skin_skin_m1_Z, n = 15))
+rand_skin_skin_m1_p
+
+# run_clusterProfiler(skin_skin_m1_Z %>% filter(Z_diff > 2) %>% pull(ASV), db_list = skin_mother_tax_list, p.adjustCutoff = 1, xlsx_name = "skin_skin_m1")
+```
+
+A higher number of 'maternal presence' can occur since we may find new combinations of maternal presence/infant presence, in case of infants w/o a mother with presence of a certain ASV they possess.
+
+Rates did not perform well when stratifying for birth mode/breastfeeding etc. Numbers seem to become too low in that case.
+
+```{r}
+check_topn <- function(rates_Z, n = 15) {
+   rates_Z$ASV[1:n]
+}
+
+list(w1 = skin_skin_w1_Z, w2 = skin_skin_w2_Z, m1 = skin_skin_m1_Z) %>%
+  map(check_topn) %>% 
+  enframe(name = "ASV") %>%
+  unnest(value) %>%
+  count(value, sort = T)
+```
+
+Overlap likely caused by mother samples which were kept stable.
+
+## fae - fae (w2)
+
+```{r, ow = '70%', w = 7, h = 4.5}
+sl(fae_fae_w2_rates, rand_pa_wrapper("fae", "fae", "w2", perm = 1000, seed = 22332), overwrite = FALSE)
+
+fae_fae_w2_Z <- get_rates_Z(fae_fae_w2_rates$rand, fae_fae_w2_rates$true, fae_fae_w2_rates$n_mat) 
+
+sl(rand_fae_fae_w2_p, plot_rates(fae_fae_w2_rates$rand, fae_fae_w2_rates$true, fae_fae_w2_Z, n = 15))
+rand_fae_fae_w2_p
+
+fae_mother_tax_list <- ps$RA %>% 
+  subset_samples(mother_inf == "mother" & niche == "fae") %>% 
+  pres_abund_filter(pres = 1, abund = 0.001) %>%
+  create_bg_list()
+
+#run_clusterProfiler(fae_fae_w2_Z %>% filter(Z_diff > 2) %>% pull(ASV), db_list = fae_mother_tax_list, p.adjustCutoff = 1, xlsx_name = "fae_fae_w2")
+```
+
+It seems this idea performs best in skin given the high level of transmissions (this was much less for fae-fae).
+We also tested bm-fae, but since we only had 30 breastmilk samples, these analyses did not perform well.
+
+Note: hashed 'out' the run_clusterProfiler-section so it does not interfere with 'phyloseq'.
+
+
+```{r, message = F}
+
+```
+
+```{r, message = F}
+
+```
+
+```{r, message = F}
+
+```
+
+```{r, message = F}
+
+```
+
+```{r, message = F}
+
+```
+
+```{r, message = F}
+
+```
+
+```{r, message = F}
+
+```
+
+```{r, message = F}
+
+```
+
+```{r, message = F}
+
+```
+
+```{r, message = F}
+
+```
+
+```{r, message = F}
+
+```
+
+```{r, message = F}
+
+```
+
+```{r, message = F}
+
+```

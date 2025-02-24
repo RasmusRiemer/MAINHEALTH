@@ -1,0 +1,2639 @@
+---
+title: "5.3_Metabolome_microbiome_correlations"
+author: "Rasmus Riemer Jakobsen"
+date: "`r Sys.time()`"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+link-citations: yes
+---
+
+```{r setup, include=F, message=F, warning=F}
+subdir_name <- "5.3_Metabolome_microbiome_correlations"
+
+#Load packages
+source("Supplementary_scripts/package_load_install.R")
+#Load utility functions
+source("Supplementary_scripts/utils.R")
+
+dir.create("results", showWarnings = FALSE, recursive = TRUE)
+
+# Set theme and colort
+
+theme_set(theme_classic())
+
+knitr::opts_chunk$set(fig.width=12, fig.height=8, fig.fullwidth = TRUE)
+
+# Load data
+
+#Microbiome
+load("0.3_deduplicated_and_decontaminated.RData")
+
+#Metabolome
+metab.id <- readr::read_tsv("Data/metabolome_milk.txt")
+metab.meta <- readr::read_tsv("Data/metadata_metabome_milk.txt")
+metab.class <- readr::read_tsv("Data/metabolite_categories.txt") %>%
+  mutate(Class = ifelse(Class == "Amino acids and derivatives", "Amino acids", Class)) # Shorten for better plot legend
+  
+
+## Check if dataframes match
+setdiff(metab.id$RCID,metab.meta$RCID)
+
+metab <- metab.id %>% dplyr::select(-RCID) 
+
+log.metab <- 
+  log10(metab+1) 
+
+# Set key metadata columns to factor
+metab.meta <- metab.meta %>%
+  mutate_at(
+    c("Days","Siblings", "GDM", "Induction", "AB.mother", "AB.infant", "Breast.infection", "Breastfeeding.issues", "Secretor", "Lewis"),
+    as.factor)
+```
+
+```{r}
+source(here::here("Supplementary_scripts","package_load_install.R")) 
+source(here::here("Supplementary_scripts","utils.R")) # please see the src-folder for some custom functions used in 
+#source(here::here("src", "run_clusterprofiler.R"))
+```
+
+```{r knit, echo=F, eval=FALSE}
+#Run to generate
+rmarkdown::render(
+  input = here::here(str_c(subdir_name, ".Rmd")),
+  output_dir = here::here("results", "reports")
+)
+```
+
+
+```{r}
+
+```
+
+# RCCA
+
+## Milk metab vs milk bac
+
+### Conversion and screeplot
+
+```{r, eval = T, include = T}
+#Subset samples present in both
+ps <- subset_samples(PSB.CSS, Sample.type == "Milk" & RCID %in% metab.id$RCID)
+
+#rcid.shared <- intersect(metab.meta$RCID,ps.milk@sam_data$RCID)
+x <- subset(metab.id, RCID %in% ps@sam_data$RCID) %>% dplyr::select(-RCID) %>%
+  dplyr::mutate(across(where(is.numeric), ~ifelse(. < 0, NA_real_, sqrt(.)))) 
+#colnames(x) <- make.names(colnames(x))
+tax <- data.frame(ps@tax_table) 
+
+#Extract ASV data
+y <- data.frame(ps@otu_table)
+##Select last non-empty taxonomic rank
+tax.bac <- as.data.frame(ps@tax_table) %>% dplyr::mutate_all(~na_if(., '')) %>%
+  mutate(across(.cols = where(is.character), ~if_else(str_detect(., "uncultured"), NA_character_, .))) %>% # remove all "_uncultured" taxonomies (uninformative) 
+  mutate(across(.cols = where(is.character), ~str_replace_all(., "_sensu_stricto_1", ""))) %>% # remove all "sens strictu" (uninformative)
+  apply(.,1, function(x) tail(stats::na.omit(x), 1))
+#Combine otu_ids with taxonomies for unique identiiers
+rownames(y) <- paste(rownames(y),tax.bac, sep = "-")
+
+
+meta <- data.frame(ps@sam_data)
+
+
+y <- t(y)
+
+
+    ##Converting and removing near-zero variance values
+library(mixOmics)
+
+nzv <- nearZeroVar(x)
+test <- x[, -nzv$Position]
+           
+           
+#vir <- mvirome[,-c(1)]
+nzv <- nearZeroVar(y) # If any
+y <- y[, -nzv$Position]
+
+
+  #PCA
+library(vegan)
+mod.x <- rda(x, scale = TRUE)
+plot(mod.x, scaling = 3)
+screeplot(mod.x)
+mod.y <- rda(y, scale = TRUE)
+plot(mod.y, scaling = 3)
+screeplot(mod.y)
+
+scaling = "ridge"
+  #Apply scaling 
+result_1comp <- rcc(x, y, method = scaling, ncomp = 1)
+result_2comp <- rcc(x, y, method = scaling, ncomp = 2)
+result_3comp <- rcc(x, y, method = scaling, ncomp = 3)
+result_4comp <- rcc(x, y, method = scaling, ncomp = 4)
+result_5comp <- rcc(x, y, method = scaling, ncomp = 5)
+result_6comp <- rcc(x, y, method = scaling, ncomp = 6)
+
+par(mfrow = c(2, 3))
+plot(result_1comp,main="1 Component")
+plot(result_2comp,main="2 Components")
+plot(result_3comp,main="3 Components")
+plot(result_4comp,main="4 Components")
+plot(result_5comp,main="5 Components")
+plot(result_6comp,main="6 Components")
+
+# produce a heat map of the cross correlation matrix
+imgCor(x, y, sideColors = c("purple", "green")) 
+```
+
+### Model tuning
+
+```{r, eval = T, include = T}
+# set grid search values for each regularisation parameter
+grid1 <- seq(0.001, 0.2, length = 10) 
+grid2 <- seq(0.001, 0.2, length = 10)
+
+# optimise the regularisation parameter values
+sl(cv.tune.rcc.milk.metab.milk.bac, tune.rcc(x, y, grid1 = grid1, grid2 = grid2, 
+                                   validation = "loo"),overwrite = FALSE)
+
+# examine the results of CV tuning
+plot(cv.tune.rcc.milk.metab.milk.bac)
+cv.tune.rcc.milk.metab.milk.bac
+
+#manually set lambda scores
+#opt.l1 <- 1.7
+#opt.l2 <- 0.003
+opt.l1 <- cv.tune.rcc.milk.metab.milk.bac$opt.lambda1
+opt.l2 <- cv.tune.rcc.milk.metab.milk.bac$opt.lambda2
+```
+
+### Model and component selection
+
+```{r, eval = T, include = T}
+shrink.rcc <- rcc(x, y, method = "shrinkage")
+
+CV.rcc <- rcc(x, y, method = "ridge", 
+                         lambda1 = opt.l1,
+                         lambda2 = opt.l2) 
+
+
+par(mfrow = c(1, 2))
+# barplot of cross validation method rCCA canonical correlations
+plot(CV.rcc, type = "barplot", main = "Cross Validation") 
+
+# barplot of shrinkage method rCCA canonical correlations
+plot(shrink.rcc, type = "barplot", main = "Shrinkage")
+```
+
+### Run model
+
+```{r, eval = T, include = T}
+#Perfrom optimised CV rCCA
+
+result.CV <- rcc(x, y, method = "ridge",
+                         lambda1 = opt.l1,
+                         lambda2 = opt.l2,
+              ncomp=3)
+
+result.shr <- rcc(x, y, method = "shrinkage",ncomp=3)
+
+# Select ridge or shrinkage method
+result <- result.CV
+
+#colnames(result$x) <- gsub(".*\\-", "", colnames(result$x)) %>% make.unique(sep="_")
+#colnames(result$Y) <- gsub(".*\\-", "", colnames(result$Y)) %>% make.unique(sep="_")
+
+# rownames(result$loadings$X) <- gsub(".*\\-", "", rownames(result$loadings$X))
+# rownames(result$loadings$Y) <- gsub(".*\\-", "", rownames(result$loadings$Y))
+
+
+```
+
+### Visualization
+
+#### Heatmaps
+
+```{r, eval = T, include = T, echo = T, message = F, warning =  F, fig.fullwidth = TRUE}
+#Defne pallette to only add colour to only high
+##Generate new pallette
+palette <- hcl.colors(200, palette = "Zissou 1", alpha = NULL, rev = FALSE, fixup = TRUE) #Seclect palette https://developer.r-project.org/Blog/public/2019/04/01/hcl-based-color-palettes-in-grdevices/
+palette[61:140] <- "white" #Select which part of pallette to replace with white
+
+# high4_3c <- cim(result, comp = 1:3, ylab = "Bacteria", xlab = "Virome host prediction", margins = c(15,20),cutoff = 0.4, color = palette)
+high.25_3c <- cim(result, comp = 1:3, ylab = "Bacteria", xlab = "Virome host prediction", margins = c(13,10),cutoff = 0.25, color = palette)
+high.2_3c <- cim(result, comp = 1:3, ylab = "Bacteria", xlab = "Virome host prediction", margins = c(13,10),cutoff = 0.2, color = palette)
+
+high.15_3c <- cim(result, comp = 1:3, ylab = "Bacteria", xlab = "Virome host prediction", margins = c(13,10),cutoff = 0.15, color = palette
+                  #,cut.tree = c(0,0.5)
+                  )
+
+
+```
+
+#### Scatterplots
+
+```{r}
+mat.25_3c <- high.25_3c$mat
+mat.2_3c <- high.2_3c$mat
+
+#Make linear plots of all bac and vir
+x.25_3c <- x[,rownames(mat.25_3c)]
+y.25_3c <- y[,colnames(mat.25_3c)]
+xy.25_3c <- cbind(x.25_3c,y.25_3c)
+x.2_3c <- x[,rownames(mat.2_3c)]
+y.2_3c <- y[,colnames(mat.2_3c)]
+xy.2_3c <- cbind(x.2_3c,y.2_3c)
+
+#ggpairs
+library(GGally)
+
+#.25 matrix ggpairs
+pairs.25 <- ggpairs(as.data.frame(xy.25_3c),
+        diag = list(continuous = "densityDiag"),
+        upper = list(continuous = wrap("cor", size = 4)),
+        axisLabels = "show")
+file_path <- "results/pairs.milk.bac.milk.metab.rcca.25.pdf"
+if (!file.exists(file_path)) {
+   ggsave(file_path,pairs.25,height=30,width=25,units="cm")
+} else {
+    cat("File already exists:", file_path, "\n")
+}
+
+#.2 matrix ggpairs
+pairs.2 <-ggpairs(as.data.frame(xy.2_3c),
+        diag = list(continuous = "densityDiag"),
+        upper = list(continuous = wrap("cor", size = 4)),
+        axisLabels = "show")
+file_path <- "results/pairs.milk.bac.milk.metab.rcca.2.pdf"
+if (!file.exists(file_path)) {
+   ggsave(file_path,pairs.25,height=30,width=25,units="cm")
+} else {
+    cat("File already exists:", file_path, "\n")
+}
+```
+
+#### Heatmaps - Pheatmap
+
+##### 0.2 cutoff
+
+```{r, eval = T, include = T, echo = T, message = F, warning =  F, fig.fullwidth = TRUE}
+###### Select RCCA output(with cutoff)
+rcca <- data.frame(high.2_3c$mat)
+
+
+library(pheatmap)
+
+palette <- hcl.colors(200, palette = "Zissou 1", alpha = NULL, rev = FALSE, fixup = TRUE) #Seclect palette https://developer.r-project.org/Blog/public/2019/04/01/hcl-based-color-palettes-in-grdevices/
+palette[46:155] <- "white" #Select which part of pallette to replace with white
+
+#Remove OTU IDs to only show taxonomy
+tax <- gsub(".*\\.", "", colnames(rcca)) %>% make.unique(sep="")
+tax
+otu <- gsub("\\..*", "", colnames(rcca)) %>% make.unique(sep="")
+otu
+
+colnames(rcca) <- tax
+
+######################## Annotations
+
+###########  x-axis annotation
+
+######## Phylogeny 1
+
+rank <-"Family"
+
+tax_levels <- ps@tax_table[otu,] %>%
+    data.frame() %>%
+  dplyr::select(1:rank) 
+
+##Select last non-empty taxonomic rank
+tax.best <- tax_levels %>% dplyr::mutate_all(~na_if(., '')) %>%
+  mutate(across(.cols = where(is.character), ~if_else(str_detect(., "uncultured"), NA_character_, .))) %>% # remove all "_uncultured"
+  apply(.,1, function(x) tail(stats::na.omit(x), 1)) %>%
+  sub("_.*", "",.)
+  
+
+tax_levels$best <- tax.best 
+sample_col <- tax_levels %>% dplyr::select(best) %>%
+  dplyr::rename(!!rank := best)
+
+######## Phylogeny 1
+
+rank <-"Class"
+
+tax_levels <- ps@tax_table[otu,] %>%
+    data.frame() %>%
+  dplyr::select(1:rank) 
+
+##Select last non-empty taxonomic rank
+tax.best <- tax_levels %>% dplyr::mutate_all(~na_if(., '')) %>%
+  mutate(across(.cols = where(is.character), ~if_else(str_detect(., "uncultured"), NA_character_, .))) %>% # remove all "_uncultured"
+  apply(.,1, function(x) tail(stats::na.omit(x), 1)) %>%
+  sub("_.*", "",.)
+  
+
+tax_levels$best <- tax.best 
+sample_col_2 <- tax_levels %>% dplyr::select(best) %>%
+  dplyr::rename(!!rank := best)
+
+############ Y-axis annotation
+
+## Matbolite class
+
+rownames(rcca) 
+
+metab.class.sel <- metab.class[match(rownames(rcca), metab.class$Metabolite), ]
+
+# Convert the "Metabolite" column to row names
+rownames <- metab.class.sel$Metabolite
+
+# Remove the "Metabolite" column from the dataframe
+
+metab.class.sel <- metab.class.sel %>% as.data.frame() %>% dplyr::select(Class) 
+rownames(metab.class.sel) <- rownames
+metab.class.sel <- rename(metab.class.sel, Class = "Metabolite category")
+
+######################### Clean species names 
+
+##Select last non-empty taxonomic rank
+rank <-"Species"
+
+# x-axis annotation
+## Phylogeny
+tax_levels <- ps@tax_table[otu,] %>%
+    data.frame() %>%
+  dplyr::select(1:rank) 
+
+##Select last non-empty taxonomic rank
+tax.best <- tax_levels %>% dplyr::mutate_all(~na_if(., '')) %>%
+  mutate(across(.cols = where(is.character), ~if_else(str_detect(., "uncultured"), NA_character_, .))) %>% # remove all "_uncultured"
+  dplyr::mutate(Genus = str_remove(Genus, "_.*")) %>% #Remove odd genus annotations
+  mutate(across(.cols = where(is.character), ~str_replace_all(., "_NK3B31_group", ""))) %>% # Fix wierd database match
+  apply(.,1, function(x) tail(stats::na.omit(x), 1))
+  
+
+tax_levels$best <- tax.best 
+
+tax_levels <- tax_levels %>%
+  dplyr::mutate_all(~na_if(., '')) %>%
+  dplyr::mutate(best = ifelse(is.na(.data[[rank]]), paste(best, "unclassified"), best)) 
+
+colnames(rcca) <- make.unique(tax_levels$best) %>% gsub("_", " ",.) %>% gsub("_", " ",.)
+
+# Align color vecors with clean tax names
+row.names(sample_col) <- colnames(rcca)
+#Add second annotation row
+sample_col <- cbind(sample_col,sample_col_2)
+
+#############
+
+#Set colors
+ann_colors <- list(Class = rep(col_fil,3)[1:n_distinct(sample_col[,1])])
+
+newnames <- lapply(
+  colnames(rcca),
+  function(x) bquote(italic(.(x))))
+
+sl(pheat.milkmet.milkbac.2,pheatmap(rcca,
+         color=palette,
+         #border_color = NA,
+         #angle_col = 45,
+         annotation_col = sample_col,
+         annotation_row =  metab.class.sel,
+         cutree_rows = 3,
+         cutree_cols = 3,
+         labels_col = as.expression(newnames),
+         main = "A - Milk bacteria vs Milk metabolites"
+         #annotation_colors= ann_colors[1]#colorRampPalette(col_fil)
+         ),
+   overwrite = TRUE
+)
+
+
+gridExtra::grid.arrange(pheat.milkmet.milkbac.2$gtable, vp=viewport(width=0.95, height=1))
+
+```
+
+#### Network plots
+
+##### Shrinkage
+
+```{r, eval = T, include = T, echo = T, message = F, warning =  F, fig.width=10, fig.height=6, fig.fullwidth = TRUE}
+# Reformat for gephi
+
+## Save blocks as polygon to determine shape in network
+
+result$names$Polygon <- result$names$data
+result$names$Polygon <- replace(result$names$data, c("bac","vir"),c(3,4)) %>% as.integer()
+
+## Remove ubique markers to allow shared coloring in Gephi
+result$names_simple$colnames$X <- gsub("*.\\_", "", result$names$colnames$X)
+result$names_simple$colnames$Y <- gsub("*.\\_", "", result$names$colnames$Y)
+
+#Show network
+
+
+#Export network result
+network.res <- network(result, comp = 1:3, interactive = FALSE,
+        lwd.edge = 2,
+        cutoff = 0.20,
+        color.node = col_fil[1:2])
+
+network.res <- network(result, comp = 1:3, interactive = FALSE,
+        lwd.edge = 2,
+        cutoff = 0.15,
+        color.node = col_fil[1:2])
+
+library(igraph)
+
+#network.res 
+
+write.graph(network.res$gR, file = "network.shrinkage0.3.gml", format = "gml")
+```
+
+##### CV
+
+```{r, eval = T, include = T, echo = T, message = F, warning =  F, fig.width=10, fig.height=6, fig.fullwidth = TRUE}
+result.CV$names_simple$colnames$X <- gsub("*.\\_", "", result.CV$names$colnames$X)
+result.CV$names_simple$colnames$Y <- gsub("*.\\_", "", result.CV$names$colnames$Y)
+
+#Show network
+network(result.CV, comp = 1:3, interactive = FALSE,
+        lwd.edge = 2,
+        cutoff = 0.2,
+        color.node = col_fil[1:2]) 
+
+network(result.CV, comp = 1:3, interactive = FALSE,
+        lwd.edge = 2,
+        cutoff = 0.15,
+        color.node = col_fil[1:2]) 
+
+# network(result.CV, comp = 1:3, interactive = FALSE,
+#         lwd.edge = 2,
+#         cutoff = 0.5,
+#         color.node = col_fil[1:2]) 
+
+
+library(igraph)
+network.res <- network(result, comp = 1:3, interactive = FALSE,
+        lwd.edge = 2,
+        cutoff = 0.2,
+        color.node = col_fil[1:2])
+
+write.graph(network.res$gR, file = "network.CV0.2.gml", format = "gml")
+```
+
+## Milk metab vs infant faecal bac
+
+### Conversion and screeplot
+
+```{r, eval = T, include = T}
+#Subset samples present in both
+ps <- subset_samples(PSB.CSS, Sample.type == "Faecal sample" & RCID %in% metab.id$RCID)
+#rcid.shared <- intersect(metab.meta$RCID,ps.milk@sam_data$RCID)
+x <- subset(metab.id, RCID %in% ps@sam_data$RCID) %>% dplyr::select(-RCID) %>%
+  dplyr::mutate(across(where(is.numeric), ~ifelse(. < 0, NA_real_, sqrt(.))))
+#colnames(x) <- make.names(colnames(x))
+tax <- data.frame(ps@tax_table)
+
+#Extract ASV data
+y <- data.frame(ps@otu_table)
+##Select last non-empty taxonomic rank
+tax.bac <- as.data.frame(ps@tax_table) %>% dplyr::mutate_all(~na_if(., '')) %>%
+  mutate(across(.cols = where(is.character), ~if_else(str_detect(., "uncultured"), NA_character_, .))) %>% # remove all "_uncultured" taxonomies (uninformative)
+  apply(.,1, function(x) tail(stats::na.omit(x), 1))
+#Combine otu_ids with taxonomies for unique identiiers
+rownames(y) <- paste(rownames(y),tax.bac, sep = "-")
+
+
+meta <- data.frame(ps@sam_data)
+
+
+y <- t(y)
+
+
+    ##Converting and removing near-zero variance values
+library(mixOmics)
+
+nzv <- nearZeroVar(x)
+x <- x[, -nzv$Position]
+           
+           
+#vir <- mvirome[,-c(1)]
+nzv <- nearZeroVar(y) # If any
+y <- y[, -nzv$Position]
+
+
+  #PCA
+library(vegan)
+mod.x <- rda(x, scale = FALSE, center = FALSE)
+plot(mod.x, scaling = 3)
+screeplot(mod.x)
+mod.y <- rda(y, scale = FALSE, center = FALSE)
+plot(mod.y, scaling = 3)
+screeplot(mod.y)
+
+scaling = "ridge"
+  #Apply scaling 
+result_1comp <- rcc(x, y, method = scaling, ncomp = 1)
+result_2comp <- rcc(x, y, method = scaling, ncomp = 2)
+result_3comp <- rcc(x, y, method = scaling, ncomp = 3)
+result_4comp <- rcc(x, y, method = scaling, ncomp = 4)
+result_5comp <- rcc(x, y, method = scaling, ncomp = 5)
+result_6comp <- rcc(x, y, method = scaling, ncomp = 6)
+
+par(mfrow = c(2, 3))
+plot(result_1comp,main="1 Component")
+plot(result_2comp,main="2 Components")
+plot(result_3comp,main="3 Components")
+plot(result_4comp,main="4 Components")
+plot(result_5comp,main="5 Components")
+plot(result_6comp,main="6 Components")
+
+# produce a heat map of the cross correlation matrix
+imgCor(x, y, sideColors = c("purple", "green")) 
+```
+
+### Model tuning
+
+```{r, eval = T, include = T}
+# set grid search values for each regularisation parameter
+grid1 <- seq(0.001, 0.2, length = 20) 
+grid2 <- seq(0.001, 0.2, length = 20)
+
+# optimise the regularisation parameter values
+sl(cv.tune.rcc.milk.metab.faecal.bac, tune.rcc(x, y, grid1 = grid1, grid2 = grid2, 
+                                   validation = "loo"),overwrite = FALSE)
+
+# examine the results of CV tuning
+plot(cv.tune.rcc.milk.metab.faecal.bac)
+cv.tune.rcc.milk.metab.faecal.bac
+
+#manually set lambda scores
+#opt.l1 <- 1.7
+#opt.l2 <- 0.003
+opt.l1 <- cv.tune.rcc.milk.metab.faecal.bac$opt.lambda1
+opt.l2 <- cv.tune.rcc.milk.metab.faecal.bac$opt.lambda2
+```
+
+### Model and component selection
+
+```{r, eval = T, include = T}
+shrink.rcc <- rcc(x, y, method = "shrinkage")
+
+CV.rcc <- rcc(x, y, method = "ridge", 
+                         lambda1 = opt.l1,
+                         lambda2 = opt.l2) 
+
+# barplot of cross validation method rCCA canonical correlations
+plot(CV.rcc, type = "barplot", main = "Cross Validation") 
+
+# barplot of shrinkage method rCCA canonical correlations
+plot(shrink.rcc, type = "barplot", main = "Shrinkage")
+```
+
+### Run model
+
+```{r, eval = T, include = T}
+#Perfrom optimised CV rCCA
+
+result.CV <- rcc(x, y, method = "ridge",
+                         lambda1 = opt.l1,
+                         lambda2 = opt.l2,
+              ncomp=2)
+
+result.raw <- rcc(x, y, method = "shrinkage",ncomp=2)
+
+#Remove OTU IDs to only show taxonomy
+result <- result.raw
+
+result$names$colnames$X <- gsub(".*\\-", "", result$names$colnames$X) %>% make.unique(sep="_")
+result$names$colnames$Y <- gsub(".*\\-", "", result$names$colnames$Y) %>% make.unique(sep="_")
+
+
+# colnames(result$X) <- gsub(".*\\-", "", colnames(result$X))
+# colnames(result$Y) <- gsub(".*\\-", "", colnames(result$Y))
+
+# rownames(result$loadings$X) <- gsub(".*\\-", "", rownames(result$loadings$X))
+# rownames(result$loadings$Y) <- gsub(".*\\-", "", rownames(result$loadings$Y))
+
+
+```
+
+### Visualization
+
+#### Heatmaps 
+
+```{r, eval = T, include = T, echo = T, message = F, warning =  F, fig.fullwidth = TRUE}
+#Defne pallette to only add colour to only high
+##Generate new pallette
+palette <- hcl.colors(200, palette = "Zissou 1", alpha = NULL, rev = FALSE, fixup = TRUE) #Seclect palette https://developer.r-project.org/Blog/public/2019/04/01/hcl-based-color-palettes-in-grdevices/
+palette[61:140] <- "white" #Select which part of pallette to replace with white
+
+# high4_2c <- cim(result, comp = 1:2, ylab = "Bacteria", xlab = "Virome", margins = c(12,18),cutoff = 0.4, color = palette)
+# high45_2c <- cim(result, comp = 1:2, ylab = "Bacteria", xlab = "Virome", margins = c(12,18),cutoff = 0.45, color = palette)
+#high5_3c <- cim(result, comp = 1:2, ylab = "Bacteria", xlab = "Virome", margins = c(12,18),cutoff = 0.5, color = palette)
+
+#pdf(filename="high5_3c.pdf", res = 600, width = 4000, height = 4000)
+#high5_3c
+#dev.off()
+
+######
+
+
+high.25_2c <- cim(result, comp = 1:2, ylab = "Bacteria", xlab = "Virome host prediction", margins = c(15,20),cutoff = 0.25, color = palette)
+
+high.225_2c <- cim(result, comp = 1:2, ylab = "Bacteria", xlab = "Virome host prediction", margins = c(15,20),cutoff = 0.225, color = palette)
+
+high.21_2c <- cim(result, comp = 1:2, ylab = "Bacteria", xlab = "Virome host prediction", margins = c(15,20),cutoff = 0.21, color = palette)
+
+high.2_2c <- cim(result, comp = 1:2, ylab = "Bacteria", xlab = "Virome host prediction", margins = c(15,20),cutoff = 0.2, color = palette)
+
+high.175_2c <- cim(result, comp = 1:2, ylab = "Bacteria", xlab = "Virome host prediction", margins = c(15,20),cutoff = 0.175, color = palette)
+
+high.15_2c <- cim(result, comp = 1:2, ylab = "Bacteria", xlab = "Virome host prediction", margins = c(15,20),cutoff = 0.15, color = palette)
+
+mat.2_2c <- high.2_2c$mat
+
+ #Output Matrix
+#write.table(mat.2_3c, "Matrix_high_3-Component_0.45.txt", sep="\t")
+
+
+```
+
+#### Scatterplots
+
+```{r}
+mat.25_2c <- high.25_2c$mat
+mat.2_2c <- high.2_2c$mat
+
+#Make linear plots of all bac and vir
+x.25_2c <- x[,rownames(mat.25_2c)]
+y.25_2c <- y[,colnames(mat.25_2c)]
+xy.25_2c <- cbind(x.25_2c,y.25_2c)
+x.2_2c <- x[,rownames(mat.2_2c)]
+y.2_2c <- y[,colnames(mat.2_2c)]
+xy.2_2c <- cbind(x.2_2c,y.2_2c)
+
+#ggpairs
+library(GGally)
+
+#.25 matrix ggpairs
+pairs.25 <- ggpairs(as.data.frame(xy.25_2c))
+file_path <- "results/pairs.faec.bac.milk.metab.rcca.25.pdf"
+if (!file.exists(file_path)) {
+   ggsave(file_path,pairs.25,height=30,width=25,units="cm")
+} else {
+    cat("File already exists:", file_path, "\n")
+}
+
+#.2 matrix ggpairs
+pairs.2 <-ggpairs(as.data.frame(xy.2_2c))
+file_path <- "results/pairs.faec.bac.milk.metab.rcca.2.pdf"
+if (!file.exists(file_path)) {
+   ggsave(file_path,pairs.25,height=30,width=25,units="cm")
+} else {
+    cat("File already exists:", file_path, "\n")
+}
+```
+
+#### Heatmaps - Pheatmap
+
+##### 0.2 cutoff
+
+```{r, eval = T, include = T, echo = T, message = F, warning =  F, fig.fullwidth = TRUE}
+###### Select RCCA output(with cutoff)
+rcca <- data.frame(high.2_2c$mat)
+
+
+library(pheatmap)
+
+palette <- hcl.colors(200, palette = "Zissou 1", alpha = NULL, rev = FALSE, fixup = TRUE) #Seclect palette https://developer.r-project.org/Blog/public/2019/04/01/hcl-based-color-palettes-in-grdevices/
+palette[46:155] <- "white" #Select which part of pallette to replace with white
+
+#Remove OTU IDs to only show taxonomy
+tax <- gsub(".*\\.", "", colnames(rcca)) %>% make.unique(sep="")
+tax
+otu <- gsub("\\..*", "", colnames(rcca)) %>% make.unique(sep="")
+otu
+
+colnames(rcca) <- tax
+
+######################## Annotations
+
+###########  x-axis annotation
+
+######## Phylogeny 1
+
+rank <-"Family"
+
+tax_levels <- ps@tax_table[otu,] %>%
+    data.frame() %>%
+  dplyr::select(1:rank) 
+
+##Select last non-empty taxonomic rank
+tax.best <- tax_levels %>% dplyr::mutate_all(~na_if(., '')) %>%
+  mutate(across(.cols = where(is.character), ~if_else(str_detect(., "uncultured"), NA_character_, .))) %>% # remove all "_uncultured"
+  apply(.,1, function(x) tail(stats::na.omit(x), 1)) %>%
+  sub("_.*", "",.)
+  
+
+tax_levels$best <- tax.best 
+sample_col <- tax_levels %>% dplyr::select(best) %>%
+  dplyr::rename(!!rank := best)
+
+######## Phylogeny 2
+
+rank <-"Class"
+
+tax_levels <- ps@tax_table[otu,] %>%
+    data.frame() %>%
+  dplyr::select(1:rank) 
+
+##Select last non-empty taxonomic rank
+tax.best <- tax_levels %>% dplyr::mutate_all(~na_if(., '')) %>%
+  mutate(across(.cols = where(is.character), ~if_else(str_detect(., "uncultured"), NA_character_, .))) %>% # remove all "_uncultured"
+  apply(.,1, function(x) tail(stats::na.omit(x), 1)) %>%
+  sub("_.*", "",.)
+  
+
+tax_levels$best <- tax.best 
+sample_col_2 <- tax_levels %>% dplyr::select(best) %>%
+  dplyr::rename(!!rank := best)
+
+############ Y-axis annotation
+
+## Matbolite class
+
+rownames(rcca) 
+
+metab.class.sel <- metab.class[match(rownames(rcca), metab.class$Metabolite), ]
+
+# Convert the "Metabolite" column to row names
+rownames <- metab.class.sel$Metabolite
+
+# Remove the "Metabolite" column from the dataframe
+
+metab.class.sel <- metab.class.sel %>% as.data.frame() %>% dplyr::select(Class) 
+rownames(metab.class.sel) <- rownames
+metab.class.sel <- rename(metab.class.sel, Class = "Metabolite category")
+
+######################### Clean species names 
+
+##Select last non-empty taxonomic rank
+rank <-"Species"
+
+# x-axis annotation
+## Phylogeny
+tax_levels <- ps@tax_table[otu,] %>%
+    data.frame() %>%
+  dplyr::select(1:rank) 
+
+##Select last non-empty taxonomic rank
+tax.best <- tax_levels %>% dplyr::mutate_all(~na_if(., '')) %>%
+  mutate(across(.cols = where(is.character), ~if_else(str_detect(., "uncultured"), NA_character_, .))) %>% # remove all "_uncultured"
+  dplyr::mutate(Genus = str_remove(Genus, "_.*")) %>% #Remove odd genus annotations
+  mutate(across(.cols = where(is.character), ~str_replace_all(., "_NK3B31_group", ""))) %>% # Fix wierd database match
+  apply(.,1, function(x) tail(stats::na.omit(x), 1))
+  
+
+tax_levels$best <- tax.best 
+
+tax_levels <- tax_levels %>%
+  dplyr::mutate_all(~na_if(., '')) %>%
+  dplyr::mutate(best = ifelse(is.na(.data[[rank]]), paste(best, "unclassified"), best)) 
+
+colnames(rcca) <- make.unique(tax_levels$best) %>% gsub("_", " ",.)
+
+# Align color vecors with clean tax names
+row.names(sample_col) <- colnames(rcca)
+#Add second annotation row
+sample_col <- cbind(sample_col,sample_col_2)
+
+#############
+
+#Set colors
+ann_colors <- list(Class = rep(col_fil,3)[1:n_distinct(sample_col[,1])])
+
+sl(pheat.milkmet.faecbac.2,pheatmap(rcca,
+         color=palette,
+         #border_color = NA,
+         angle_col = 45,
+         annotation_col = sample_col,
+         annotation_row =  metab.class.sel,
+         cutree_rows = 3,
+         cutree_cols = 3,
+         main = "B - Infant faecal bacteria vs Milk metabolites"
+         ),
+   overwrite = TRUE
+)
+
+gridExtra::grid.arrange(pheat.milkmet.faecbac.2$gtable, vp=viewport(width=0.95, height=1))
+
+```
+
+##### 0.21 cutoff
+
+```{r, eval = T, include = T, echo = T, message = F, warning =  F, fig.fullwidth = TRUE}
+###### Select RCCA output(with cutoff)
+rcca <- data.frame(high.21_2c$mat)
+
+
+library(pheatmap)
+
+palette <- hcl.colors(200, palette = "Zissou 1", alpha = NULL, rev = FALSE, fixup = TRUE) #Seclect palette https://developer.r-project.org/Blog/public/2019/04/01/hcl-based-color-palettes-in-grdevices/
+palette[46:155] <- "white" #Select which part of pallette to replace with white
+
+#Remove OTU IDs to only show taxonomy
+tax <- gsub(".*\\.", "", colnames(rcca)) %>% make.unique(sep="")
+tax
+otu <- gsub("\\..*", "", colnames(rcca)) %>% make.unique(sep="")
+otu
+
+colnames(rcca) <- tax
+
+######################## Annotations
+
+###########  x-axis annotation
+
+######## Phylogeny 1
+
+rank <-"Family"
+
+tax_levels <- ps@tax_table[otu,] %>%
+    data.frame() %>%
+  dplyr::select(1:rank) 
+
+##Select last non-empty taxonomic rank
+tax.best <- tax_levels %>% dplyr::mutate_all(~na_if(., '')) %>%
+  mutate(across(.cols = where(is.character), ~if_else(str_detect(., "uncultured"), NA_character_, .))) %>% # remove all "_uncultured"
+  apply(.,1, function(x) tail(stats::na.omit(x), 1)) %>%
+  sub("_.*", "",.)
+  
+
+tax_levels$best <- tax.best 
+sample_col <- tax_levels %>% dplyr::select(best) %>%
+  dplyr::rename(!!rank := best)
+
+######## Phylogeny 1
+
+rank <-"Class"
+
+tax_levels <- ps@tax_table[otu,] %>%
+    data.frame() %>%
+  dplyr::select(1:rank) 
+
+##Select last non-empty taxonomic rank
+tax.best <- tax_levels %>% dplyr::mutate_all(~na_if(., '')) %>%
+  mutate(across(.cols = where(is.character), ~if_else(str_detect(., "uncultured"), NA_character_, .))) %>% # remove all "_uncultured"
+  apply(.,1, function(x) tail(stats::na.omit(x), 1)) %>%
+  sub("_.*", "",.)
+  
+
+tax_levels$best <- tax.best 
+sample_col_2 <- tax_levels %>% dplyr::select(best) %>%
+  dplyr::rename(!!rank := best)
+
+############ Y-axis annotation
+
+## Matbolite class
+
+rownames(rcca) 
+
+metab.class.sel <- metab.class[match(rownames(rcca), metab.class$Metabolite), ]
+
+# Convert the "Metabolite" column to row names
+rownames <- metab.class.sel$Metabolite
+
+# Remove the "Metabolite" column from the dataframe
+
+metab.class.sel <- metab.class.sel %>% as.data.frame() %>% dplyr::select(Class) 
+rownames(metab.class.sel) <- rownames
+metab.class.sel <- rename(metab.class.sel, Class = "Metabolite category")
+
+######################### Clean species names 
+
+##Select last non-empty taxonomic rank
+rank <-"Species"
+
+# x-axis annotation
+## Phylogeny
+tax_levels <- ps@tax_table[otu,] %>%
+    data.frame() %>%
+  dplyr::select(1:rank) 
+
+##Select last non-empty taxonomic rank
+tax.best <- tax_levels %>% dplyr::mutate_all(~na_if(., '')) %>%
+  mutate(across(.cols = where(is.character), ~if_else(str_detect(., "uncultured"), NA_character_, .))) %>% # remove all "_uncultured"
+  dplyr::mutate(Genus = str_remove(Genus, "_.*")) %>% #Remove odd genus annotations
+  mutate(across(.cols = where(is.character), ~str_replace_all(., "_NK3B31_group", ""))) %>% # Fix wierd database match
+  apply(.,1, function(x) tail(stats::na.omit(x), 1))
+  
+
+tax_levels$best <- tax.best 
+
+tax_levels <- tax_levels %>%
+  dplyr::mutate_all(~na_if(., '')) %>%
+  dplyr::mutate(best = ifelse(is.na(.data[[rank]]), paste(best, "unclassified"), best)) 
+
+colnames(rcca) <- make.unique(tax_levels$best) %>% gsub("_", " ",.)
+
+# Align color vecors with clean tax names
+row.names(sample_col) <- colnames(rcca)
+#Add second annotation row
+sample_col <- cbind(sample_col,sample_col_2)
+
+#############
+
+#Set colors
+ann_colors <- list(Class = rep(col_fil,3)[1:n_distinct(sample_col[,1])])
+
+sl(pheat.milkmet.faecbac.21,pheatmap(rcca,
+         color=palette,
+         #border_color = NA,
+         angle_col = 45,
+         annotation_col = sample_col,
+         annotation_row =  metab.class.sel,
+         cutree_rows = 3,
+         cutree_cols = 3,
+         main = "B - Infant faecal bacteria vs Milk metabolites"
+         ),
+   overwrite = TRUE
+)
+
+gridExtra::grid.arrange(pheat.milkmet.faecbac.21$gtable, vp=viewport(width=0.95, height=1))
+
+```
+
+##### 0.225 cutoff
+
+```{r, eval = T, include = T, echo = T, message = F, warning =  F, fig.fullwidth = TRUE}
+###### Select RCCA output(with cutoff)
+rcca <- data.frame(high.225_2c$mat)
+
+
+library(pheatmap)
+
+palette <- hcl.colors(200, palette = "Zissou 1", alpha = NULL, rev = FALSE, fixup = TRUE) #Seclect palette https://developer.r-project.org/Blog/public/2019/04/01/hcl-based-color-palettes-in-grdevices/
+palette[46:155] <- "white" #Select which part of pallette to replace with white
+
+#Remove OTU IDs to only show taxonomy
+tax <- gsub(".*\\.", "", colnames(rcca)) %>% make.unique(sep="")
+tax
+otu <- gsub("\\..*", "", colnames(rcca)) %>% make.unique(sep="")
+otu
+
+colnames(rcca) <- tax
+
+######################## Annotations
+
+###########  x-axis annotation
+
+######## Phylogeny 1
+
+rank <-"Family"
+
+tax_levels <- ps@tax_table[otu,] %>%
+    data.frame() %>%
+  dplyr::select(1:rank) 
+
+##Select last non-empty taxonomic rank
+tax.best <- tax_levels %>% dplyr::mutate_all(~na_if(., '')) %>%
+  mutate(across(.cols = where(is.character), ~if_else(str_detect(., "uncultured"), NA_character_, .))) %>% # remove all "_uncultured"
+  apply(.,1, function(x) tail(stats::na.omit(x), 1)) %>%
+  sub("_.*", "",.)
+  
+
+tax_levels$best <- tax.best 
+sample_col <- tax_levels %>% dplyr::select(best) %>%
+  dplyr::rename(!!rank := best)
+
+######## Phylogeny 1
+
+rank <-"Class"
+
+tax_levels <- ps@tax_table[otu,] %>%
+    data.frame() %>%
+  dplyr::select(1:rank) 
+
+##Select last non-empty taxonomic rank
+tax.best <- tax_levels %>% dplyr::mutate_all(~na_if(., '')) %>%
+  mutate(across(.cols = where(is.character), ~if_else(str_detect(., "uncultured"), NA_character_, .))) %>% # remove all "_uncultured"
+  apply(.,1, function(x) tail(stats::na.omit(x), 1)) %>%
+  sub("_.*", "",.)
+  
+
+tax_levels$best <- tax.best 
+sample_col_2 <- tax_levels %>% dplyr::select(best) %>%
+  dplyr::rename(!!rank := best)
+
+############ Y-axis annotation
+
+## Matbolite class
+
+rownames(rcca) 
+
+metab.class.sel <- metab.class[match(rownames(rcca), metab.class$Metabolite), ]
+
+# Convert the "Metabolite" column to row names
+rownames <- metab.class.sel$Metabolite
+
+# Remove the "Metabolite" column from the dataframe
+
+metab.class.sel <- metab.class.sel %>% as.data.frame() %>% dplyr::select(Class) 
+rownames(metab.class.sel) <- rownames
+metab.class.sel <- rename(metab.class.sel, Class = "Metabolite category")
+
+######################### Clean species names 
+
+##Select last non-empty taxonomic rank
+rank <-"Species"
+
+# x-axis annotation
+## Phylogeny
+tax_levels <- ps@tax_table[otu,] %>%
+    data.frame() %>%
+  dplyr::select(1:rank) 
+
+##Select last non-empty taxonomic rank
+tax.best <- tax_levels %>% dplyr::mutate_all(~na_if(., '')) %>%
+  mutate(across(.cols = where(is.character), ~if_else(str_detect(., "uncultured"), NA_character_, .))) %>% # remove all "_uncultured"
+  dplyr::mutate(Genus = str_remove(Genus, "_.*")) %>% #Remove odd genus annotations
+  mutate(across(.cols = where(is.character), ~str_replace_all(., "_NK3B31_group", ""))) %>% # Fix wierd database match
+  apply(.,1, function(x) tail(stats::na.omit(x), 1))
+  
+
+tax_levels$best <- tax.best 
+
+tax_levels <- tax_levels %>%
+  dplyr::mutate_all(~na_if(., '')) %>%
+  dplyr::mutate(best = ifelse(is.na(.data[[rank]]), paste(best, "unclassified"), best)) 
+
+colnames(rcca) <- make.unique(tax_levels$best) %>% gsub("_", " ",.)
+
+# Align color vecors with clean tax names
+row.names(sample_col) <- colnames(rcca)
+#Add second annotation row
+sample_col <- cbind(sample_col,sample_col_2)
+
+#############
+
+#Set colors
+ann_colors <- list(Class = rep(col_fil,3)[1:n_distinct(sample_col[,1])])
+
+newnames <- lapply(
+  colnames(rcca),
+  function(x) bquote(italic(.(x))))
+
+sl(pheat.milkmet.faecbac.225,pheatmap(rcca,
+         color=palette,
+         #border_color = NA,
+         #angle_col = 45,
+         annotation_col = sample_col,
+         annotation_row =  metab.class.sel,
+         cutree_rows = 3,
+         cutree_cols = 3,
+         labels_col = as.expression(newnames),
+         main = "B - Infant faecal bacteria vs Milk metabolites"
+         ),
+   overwrite = TRUE
+)
+
+gridExtra::grid.arrange(pheat.milkmet.faecbac.225$gtable, vp=viewport(width=0.95, height=1))
+
+```
+
+##### 0.25 cutoff
+
+```{r, eval = T, include = T, echo = T, message = F, warning =  F, fig.fullwidth = TRUE}
+###### Select RCCA output(with cutoff)
+rcca <- data.frame(high.25_2c$mat)
+
+
+library(pheatmap)
+
+palette <- hcl.colors(200, palette = "Zissou 1", alpha = NULL, rev = FALSE, fixup = TRUE) #Seclect palette https://developer.r-project.org/Blog/public/2019/04/01/hcl-based-color-palettes-in-grdevices/
+palette[46:155] <- "white" #Select which part of pallette to replace with white
+
+#Remove OTU IDs to only show taxonomy
+tax <- gsub(".*\\.", "", colnames(rcca)) %>% make.unique(sep="")
+tax
+otu <- gsub("\\..*", "", colnames(rcca)) %>% make.unique(sep="")
+otu
+
+colnames(rcca) <- tax
+
+######################## Annotations
+
+###########  x-axis annotation
+
+######## Phylogeny 1
+
+rank <-"Family"
+
+tax_levels <- ps@tax_table[otu,] %>%
+    data.frame() %>%
+  dplyr::select(1:rank) 
+
+##Select last non-empty taxonomic rank
+tax.best <- tax_levels %>% dplyr::mutate_all(~na_if(., '')) %>%
+  mutate(across(.cols = where(is.character), ~if_else(str_detect(., "uncultured"), NA_character_, .))) %>% # remove all "_uncultured"
+  apply(.,1, function(x) tail(stats::na.omit(x), 1)) %>%
+  sub("_.*", "",.)
+  
+
+tax_levels$best <- tax.best 
+sample_col <- tax_levels %>% dplyr::select(best) %>%
+  dplyr::rename(!!rank := best)
+
+######## Phylogeny 1
+
+rank <-"Class"
+
+tax_levels <- ps@tax_table[otu,] %>%
+    data.frame() %>%
+  dplyr::select(1:rank) 
+
+##Select last non-empty taxonomic rank
+tax.best <- tax_levels %>% dplyr::mutate_all(~na_if(., '')) %>%
+  mutate(across(.cols = where(is.character), ~if_else(str_detect(., "uncultured"), NA_character_, .))) %>% # remove all "_uncultured"
+  apply(.,1, function(x) tail(stats::na.omit(x), 1)) %>%
+  sub("_.*", "",.)
+  
+
+tax_levels$best <- tax.best 
+sample_col_2 <- tax_levels %>% dplyr::select(best) %>%
+  dplyr::rename(!!rank := best)
+
+############ Y-axis annotation
+
+## Matbolite class
+
+rownames(rcca) 
+
+metab.class.sel <- metab.class[match(rownames(rcca), metab.class$Metabolite), ]
+
+# Convert the "Metabolite" column to row names
+rownames <- metab.class.sel$Metabolite
+
+# Remove the "Metabolite" column from the dataframe
+
+metab.class.sel <- metab.class.sel %>% as.data.frame() %>% dplyr::select(Class) 
+rownames(metab.class.sel) <- rownames
+metab.class.sel <- rename(metab.class.sel, Class = "Metabolite category")
+
+######################### Clean species names 
+
+##Select last non-empty taxonomic rank
+rank <-"Species"
+
+# x-axis annotation
+## Phylogeny
+tax_levels <- ps@tax_table[otu,] %>%
+    data.frame() %>%
+  dplyr::select(1:rank) 
+
+##Select last non-empty taxonomic rank
+tax.best <- tax_levels %>% dplyr::mutate_all(~na_if(., '')) %>%
+  mutate(across(.cols = where(is.character), ~if_else(str_detect(., "uncultured"), NA_character_, .))) %>% # remove all "_uncultured"
+  dplyr::mutate(Genus = str_remove(Genus, "_.*")) %>% #Remove odd genus annotations
+  mutate(across(.cols = where(is.character), ~str_replace_all(., "_NK3B31_group", ""))) %>% # Fix wierd database match
+  apply(.,1, function(x) tail(stats::na.omit(x), 1))
+  
+
+tax_levels$best <- tax.best 
+
+tax_levels <- tax_levels %>%
+  dplyr::mutate_all(~na_if(., '')) %>%
+  dplyr::mutate(best = ifelse(is.na(.data[[rank]]), paste(best, "unclassified"), best)) 
+
+colnames(rcca) <- make.unique(tax_levels$best) %>% gsub("_", " ",.)
+
+# Align color vecors with clean tax names
+row.names(sample_col) <- colnames(rcca)
+#Add second annotation row
+sample_col <- cbind(sample_col,sample_col_2)
+
+#############
+
+#Set colors
+ann_colors <- list(Class = rep(col_fil,3)[1:n_distinct(sample_col[,1])])
+
+newnames <- lapply(
+  colnames(rcca),
+  function(x) bquote(italic(.(x))))
+
+sl(pheat.milkmet.faecbac.25,pheatmap(rcca,
+         color=palette,
+         #border_color = NA,
+         #angle_col = 45,
+         annotation_col = sample_col,
+         annotation_row =  metab.class.sel,
+         cutree_rows = 3,
+         cutree_cols = 3,
+         labels_col = as.expression(newnames),
+         main = "B - Infant faecal bacteria vs Milk metabolites"
+         ),
+   overwrite = TRUE
+   )
+
+gridExtra::grid.arrange(pheat.milkmet.faecbac.25$gtable, vp=viewport(width=0.97, height=1))
+
+```
+
+## Only Bifidobacteria vs milk metabolites
+
+### Conversion and screeplot
+
+```{r, eval = T, include = T}
+#Subset samples present in both
+ps <- subset_samples(PSB.CSS, Sample.type == "Faecal sample" & RCID %in% metab.id$RCID)
+ps <- subset_taxa(ps, Family=="Bifidobacteriaceae")#subset_taxa(ps, Genus=="Bifidobacterium")
+#rcid.shared <- intersect(metab.meta$RCID,ps.milk@sam_data$RCID)
+x <- subset(metab.id, RCID %in% ps@sam_data$RCID) %>% dplyr::select(-RCID) %>%
+  dplyr::mutate(across(where(is.numeric), ~ifelse(. < 0, NA_real_, sqrt(.))))
+#colnames(x) <- make.names(colnames(x))
+tax <- data.frame(ps@tax_table)
+
+#Extract ASV data
+y <- data.frame(ps@otu_table)
+##Select last non-empty taxonomic rank
+tax.bac <- as.data.frame(ps@tax_table) %>% dplyr::mutate_all(~na_if(., '')) %>%
+  mutate(across(.cols = where(is.character), ~if_else(str_detect(., "uncultured"), NA_character_, .))) %>% # remove all "_uncultured" taxonomies (uninformative)
+  apply(.,1, function(x) tail(stats::na.omit(x), 1))
+#Combine otu_ids with taxonomies for unique identiiers
+rownames(y) <- paste(rownames(y),tax.bac, sep = "-")
+
+
+meta <- data.frame(ps@sam_data)
+
+
+y <- t(y)
+
+
+    ##Converting and removing near-zero variance values
+library(mixOmics)
+
+nzv <- nearZeroVar(x)
+x <- x[, -nzv$Position]
+           
+           
+#vir <- mvirome[,-c(1)]
+nzv <- nearZeroVar(y) # If any
+y <- y[, -nzv$Position]
+
+
+  #PCA
+library(vegan)
+mod.x <- rda(x, scale = FALSE, center = FALSE)
+plot(mod.x, scaling = 3)
+screeplot(mod.x)
+mod.y <- rda(y, scale = FALSE, center = FALSE)
+plot(mod.y, scaling = 3)
+screeplot(mod.y)
+
+scaling = "ridge"
+  #Apply scaling 
+result_1comp <- rcc(x, y, method = scaling, ncomp = 1)
+result_2comp <- rcc(x, y, method = scaling, ncomp = 2)
+result_3comp <- rcc(x, y, method = scaling, ncomp = 3)
+result_4comp <- rcc(x, y, method = scaling, ncomp = 4)
+result_5comp <- rcc(x, y, method = scaling, ncomp = 5)
+result_6comp <- rcc(x, y, method = scaling, ncomp = 6)
+
+par(mfrow = c(2, 3))
+plot(result_1comp,main="1 Component")
+plot(result_2comp,main="2 Components")
+plot(result_3comp,main="3 Components")
+plot(result_4comp,main="4 Components")
+plot(result_5comp,main="5 Components")
+plot(result_6comp,main="6 Components")
+
+# produce a heat map of the cross correlation matrix
+imgCor(x, y, sideColors = c("purple", "green")) 
+```
+
+### Model tuning
+
+```{r, eval = T, include = T}
+# set grid search values for each regularisation parameter
+grid1 <- seq(0.001, 0.2, length = 20) 
+grid2 <- seq(0.001, 0.2, length = 20)
+
+# optimise the regularisation parameter values
+sl(cv.tune.rcc.milk.metab.faecal.bifido, tune.rcc(x, y, grid1 = grid1, grid2 = grid2, 
+                                   validation = "loo"),overwrite = FALSE)
+
+# examine the results of CV tuning
+plot(cv.tune.rcc.milk.metab.faecal.bifido)
+cv.tune.rcc.milk.metab.faecal.bifido
+
+#manually set lambda scores
+#opt.l1 <- 1.7
+#opt.l2 <- 0.003
+opt.l1 <- cv.tune.rcc.milk.metab.faecal.bifido$opt.lambda1
+opt.l2 <- cv.tune.rcc.milk.metab.faecal.bifido$opt.lambda2
+```
+
+### Model and component selection
+
+```{r, eval = T, include = T}
+shrink.rcc <- rcc(x, y, method = "shrinkage")
+
+CV.rcc <- rcc(x, y, method = "ridge", 
+                         lambda1 = opt.l1,
+                         lambda2 = opt.l2) 
+
+# barplot of cross validation method rCCA canonical correlations
+plot(CV.rcc, type = "barplot", main = "Cross Validation") 
+
+# barplot of shrinkage method rCCA canonical correlations
+plot(shrink.rcc, type = "barplot", main = "Shrinkage")
+```
+
+### Run model
+
+```{r, eval = T, include = T}
+#Perfrom optimised CV rCCA
+
+result.CV <- rcc(x, y, method = "ridge",
+                         lambda1 = opt.l1,
+                         lambda2 = opt.l2,
+              ncomp=2)
+
+result.raw <- rcc(x, y, method = "shrinkage",ncomp=2)
+
+#Remove OTU IDs to only show taxonomy
+result <- result.raw
+
+result$names$colnames$X <- gsub(".*\\-", "", result$names$colnames$X) %>% make.unique(sep="_")
+result$names$colnames$Y <- gsub(".*\\-", "", result$names$colnames$Y) %>% make.unique(sep="_")
+
+
+# colnames(result$X) <- gsub(".*\\-", "", colnames(result$X))
+# colnames(result$Y) <- gsub(".*\\-", "", colnames(result$Y))
+
+# rownames(result$loadings$X) <- gsub(".*\\-", "", rownames(result$loadings$X))
+# rownames(result$loadings$Y) <- gsub(".*\\-", "", rownames(result$loadings$Y))
+
+
+```
+
+### Visualization
+
+#### Heatmaps 
+
+```{r, eval = T, include = T, echo = T, message = F, warning =  F, fig.fullwidth = TRUE}
+#Defne pallette to only add colour to only high
+##Generate new pallette
+palette <- hcl.colors(200, palette = "Zissou 1", alpha = NULL, rev = FALSE, fixup = TRUE) #Seclect palette https://developer.r-project.org/Blog/public/2019/04/01/hcl-based-color-palettes-in-grdevices/
+palette[61:140] <- "white" #Select which part of pallette to replace with white
+
+# high4_2c <- cim(result, comp = 1:2, ylab = "Bacteria", xlab = "Virome", margins = c(12,18),cutoff = 0.4, color = palette)
+# high45_2c <- cim(result, comp = 1:2, ylab = "Bacteria", xlab = "Virome", margins = c(12,18),cutoff = 0.45, color = palette)
+#high5_3c <- cim(result, comp = 1:2, ylab = "Bacteria", xlab = "Virome", margins = c(12,18),cutoff = 0.5, color = palette)
+
+#pdf(filename="high5_3c.pdf", res = 600, width = 4000, height = 4000)
+#high5_3c
+#dev.off()
+
+######
+
+# high6_3c <- cim(result, comp = 1:3, ylab = "Bacteria", xlab = "Virome host prediction", margins = c(7,9),cutoff = 0.6, color = palette)
+# high5_3c <- cim(result, comp = 1:3, ylab = "Bacteria", xlab = "Virome host prediction", margins = c(7,9),cutoff = 0.5, color = palette)
+# high45_3c<- cim(result, comp = 1:3, ylab = "Bacteria", xlab = "Virome host prediction", margins = c(15,20),cutoff = 0.45, color = palette)
+high.25_2c <- cim(result, comp = 1:2, ylab = "Bacteria", xlab = "Virome host prediction", margins = c(15,20),cutoff = 0.25, color = palette)
+
+high.2_2c <- cim(result, comp = 1:2, ylab = "Bacteria", xlab = "Virome host prediction", margins = c(15,20),cutoff = 0.2, color = palette)
+
+high.21_2c <- cim(result, comp = 1:2, ylab = "Bacteria", xlab = "Virome host prediction", margins = c(15,20),cutoff = 0.21, color = palette)
+
+high.175_2c <- cim(result, comp = 1:2, ylab = "Bacteria", xlab = "Virome host prediction", margins = c(15,20),cutoff = 0.175, color = palette)
+
+high.15_2c <- cim(result, comp = 1:2, ylab = "Bacteria", xlab = "Virome host prediction", margins = c(15,20),cutoff = 0.15, color = palette)
+
+mat.2_2c <- high.2_2c$mat
+
+ #Output Matrix
+#write.table(mat.2_3c, "Matrix_high_3-Component_0.45.txt", sep="\t")
+
+
+```
+
+#### Scatterplots
+
+```{r}
+mat.25_2c <- high.25_2c$mat
+mat.2_2c <- high.2_2c$mat
+
+#Make linear plots of all bac and vir
+x.25_2c <- x[,rownames(mat.25_2c)]
+y.25_2c <- y[,colnames(mat.25_2c)]
+xy.25_2c <- cbind(x.25_2c,y.25_2c)
+x.2_2c <- x[,rownames(mat.2_2c)]
+y.2_2c <- y[,colnames(mat.2_2c)]
+xy.2_2c <- cbind(x.2_2c,y.2_2c)
+
+#ggpairs
+library(GGally)
+
+#.25 matrix ggpairs
+pairs.25 <- ggpairs(as.data.frame(xy.25_2c))
+file_path <- "results/pairs.faec.bifido.milk.metab.rcca.25.pdf"
+if (!file.exists(file_path)) {
+   ggsave(file_path,pairs.25,height=30,width=25,units="cm")
+} else {
+    cat("File already exists:", file_path, "\n")
+}
+
+#.2 matrix ggpairs
+pairs.2 <-ggpairs(as.data.frame(xy.2_2c))
+file_path <- "results/pairs.faec.bifido.milk.metab.rcca.2.pdf"
+if (!file.exists(file_path)) {
+   ggsave(file_path,pairs.25,height=30,width=25,units="cm")
+} else {
+    cat("File already exists:", file_path, "\n")
+}
+```
+
+#### Heatmaps - Pheatmap
+
+##### 0.21 cutoff
+
+```{r, eval = T, include = T, echo = T, message = F, warning =  F, fig.fullwidth = TRUE}
+###### Select RCCA output(with cutoff)
+rcca <- data.frame(high.21_2c$mat)
+
+
+library(pheatmap)
+
+palette <- hcl.colors(200, palette = "Zissou 1", alpha = NULL, rev = FALSE, fixup = TRUE) #Seclect palette https://developer.r-project.org/Blog/public/2019/04/01/hcl-based-color-palettes-in-grdevices/
+palette[46:155] <- "white" #Select which part of pallette to replace with white
+
+#Remove OTU IDs to only show taxonomy
+tax <- gsub(".*\\.", "", colnames(rcca)) %>% make.unique(sep="")
+tax
+otu <- gsub("\\..*", "", colnames(rcca)) %>% make.unique(sep="")
+otu
+
+colnames(rcca) <- tax
+
+######################## Annotations
+
+###########  x-axis annotation
+
+######## Phylogeny 1
+
+rank <-"Family"
+
+tax_levels <- ps@tax_table[otu,] %>%
+    data.frame() %>%
+  dplyr::select(1:rank) 
+
+##Select last non-empty taxonomic rank
+tax.best <- tax_levels %>% dplyr::mutate_all(~na_if(., '')) %>%
+  mutate(across(.cols = where(is.character), ~if_else(str_detect(., "uncultured"), NA_character_, .))) %>% # remove all "_uncultured"
+  apply(.,1, function(x) tail(stats::na.omit(x), 1)) %>%
+  sub("_.*", "",.)
+  
+
+tax_levels$best <- tax.best 
+sample_col <- tax_levels %>% dplyr::select(best) %>%
+  dplyr::rename(!!rank := best)
+
+######## Phylogeny 1
+
+rank <-"Class"
+
+tax_levels <- ps@tax_table[otu,] %>%
+    data.frame() %>%
+  dplyr::select(1:rank) 
+
+##Select last non-empty taxonomic rank
+tax.best <- tax_levels %>% dplyr::mutate_all(~na_if(., '')) %>%
+  mutate(across(.cols = where(is.character), ~if_else(str_detect(., "uncultured"), NA_character_, .))) %>% # remove all "_uncultured"
+  apply(.,1, function(x) tail(stats::na.omit(x), 1)) %>%
+  sub("_.*", "",.)
+  
+
+tax_levels$best <- tax.best 
+sample_col_2 <- tax_levels %>% dplyr::select(best) %>%
+  dplyr::rename(!!rank := best)
+
+############ Y-axis annotation
+
+## Matbolite class
+
+rownames(rcca) 
+
+metab.class.sel <- metab.class[match(rownames(rcca), metab.class$Metabolite), ]
+
+# Convert the "Metabolite" column to row names
+rownames <- metab.class.sel$Metabolite
+
+# Remove the "Metabolite" column from the dataframe
+
+metab.class.sel <- metab.class.sel %>% as.data.frame() %>% dplyr::select(Class) 
+rownames(metab.class.sel) <- rownames
+metab.class.sel <- rename(metab.class.sel, Class = "Metabolite category")
+
+######################### Clean species names 
+
+##Select last non-empty taxonomic rank
+rank <-"Species"
+
+# x-axis annotation
+## Phylogeny
+tax_levels <- ps@tax_table[otu,] %>%
+    data.frame() %>%
+  dplyr::select(1:rank) 
+
+##Select last non-empty taxonomic rank
+tax.best <- tax_levels %>% dplyr::mutate_all(~na_if(., '')) %>%
+  mutate(across(.cols = where(is.character), ~if_else(str_detect(., "uncultured"), NA_character_, .))) %>% # remove all "_uncultured"
+  dplyr::mutate(Genus = str_remove(Genus, "_.*")) %>% #Remove odd genus annotations
+  mutate(across(.cols = where(is.character), ~str_replace_all(., "_NK3B31_group", ""))) %>% # Fix wierd database match
+  apply(.,1, function(x) tail(stats::na.omit(x), 1))
+  
+
+tax_levels$best <- tax.best 
+
+tax_levels <- tax_levels %>%
+  dplyr::mutate_all(~na_if(., '')) %>%
+  dplyr::mutate(best = ifelse(is.na(.data[[rank]]), paste(best, "unclassified"), best)) 
+
+colnames(rcca) <- make.unique(tax_levels$best) %>% gsub("_", " ",.)
+
+# Align color vecors with clean tax names
+row.names(sample_col) <- colnames(rcca)
+#Add second annotation row
+sample_col <- cbind(sample_col,sample_col_2)
+
+#############
+
+#Set colors
+ann_colors <- list(Class = rep(col_fil,3)[1:n_distinct(sample_col[,1])])
+
+sl(pheat.milkmet.faecbifido.21,pheatmap(rcca,
+         color=palette,
+         #border_color = NA,
+         angle_col = 45,
+         annotation_col = sample_col,
+         annotation_row =  metab.class.sel,
+         cutree_rows = 3,
+         cutree_cols = 3,
+         main = "C - Infant faecal bifidobacteria vs Milk metabolites"
+         ),
+   overwrite = TRUE
+)
+
+gridExtra::grid.arrange(pheat.milkmet.faecbifido.21$gtable, vp=viewport(width=0.95, height=1))
+
+```
+
+##### 0.2 cutoff
+
+```{r, eval = T, include = T, echo = T, message = F, warning =  F, fig.fullwidth = TRUE}
+###### Select RCCA output(with cutoff)
+rcca <- data.frame(high.2_2c$mat)
+
+
+library(pheatmap)
+
+palette <- hcl.colors(200, palette = "Zissou 1", alpha = NULL, rev = FALSE, fixup = TRUE) #Seclect palette https://developer.r-project.org/Blog/public/2019/04/01/hcl-based-color-palettes-in-grdevices/
+palette[46:155] <- "white" #Select which part of pallette to replace with white
+
+#Remove OTU IDs to only show taxonomy
+tax <- gsub(".*\\.", "", colnames(rcca)) %>% make.unique(sep="")
+tax
+otu <- gsub("\\..*", "", colnames(rcca)) %>% make.unique(sep="")
+otu
+
+colnames(rcca) <- tax
+
+######################## Annotations
+
+###########  x-axis annotation
+
+######## Phylogeny 1
+
+rank <-"Species"
+
+tax_levels <- ps@tax_table[otu,] %>%
+    data.frame() %>%
+  dplyr::select(1:rank) 
+
+##Select last non-empty taxonomic rank
+tax.best <- tax_levels %>% dplyr::mutate_all(~na_if(., '')) %>%
+  dplyr::mutate(Species = replace(Species, is.na(Species), "unclassified")) %>%
+  mutate(across(.cols = where(is.character), ~if_else(str_detect(., "uncultured"), NA_character_, .))) %>% # remove all "_uncultured"
+  apply(.,1, function(x) tail(stats::na.omit(x), 1)) #%>%
+  #sub("_.*", "",.)
+  
+
+tax_levels$best <-  sapply(strsplit(gsub("_", " ", tax.best), " "), function(x) tail(x, 1))
+
+sample_col <- tax_levels %>% dplyr::select(best) %>%
+  dplyr::rename(!!rank := best)
+
+######## Phylogeny 2
+
+rank <-"Class"
+
+tax_levels <- ps@tax_table[otu,] %>%
+    data.frame() %>%
+  dplyr::select(1:rank) 
+
+##Select last non-empty taxonomic rank
+tax.best <- tax_levels %>% dplyr::mutate_all(~na_if(., '')) %>%
+  mutate(across(.cols = where(is.character), ~if_else(str_detect(., "uncultured"), NA_character_, .))) %>% # remove all "_uncultured"
+  apply(.,1, function(x) tail(stats::na.omit(x), 1)) %>%
+  sub("_.*", "",.)
+  
+
+tax_levels$best <- tax.best 
+sample_col_2 <- tax_levels %>% dplyr::select(best) %>%
+  dplyr::rename(!!rank := best)
+
+############ Y-axis annotation
+
+## Matbolite class
+
+rownames(rcca) 
+
+metab.class.sel <- metab.class[match(rownames(rcca), metab.class$Metabolite), ]
+
+# Convert the "Metabolite" column to row names
+rownames <- metab.class.sel$Metabolite
+
+# Remove the "Metabolite" column from the dataframe
+
+metab.class.sel <- metab.class.sel %>% as.data.frame() %>% dplyr::select(Class) 
+rownames(metab.class.sel) <- rownames
+metab.class.sel <- rename(metab.class.sel, Class = "Metabolite category")
+
+######################### Clean species names 
+
+##Select last non-empty taxonomic rank
+rank <-"Species"
+
+# x-axis annotation
+## Phylogeny
+tax_levels <- ps@tax_table[otu,] %>%
+    data.frame() %>%
+  dplyr::select(1:rank) 
+
+##Select last non-empty taxonomic rank
+tax.best <- tax_levels %>% dplyr::mutate_all(~na_if(., '')) %>%
+  mutate(across(.cols = where(is.character), ~if_else(str_detect(., "uncultured"), NA_character_, .))) %>% # remove all "_uncultured"
+  dplyr::mutate(Genus = str_remove(Genus, "_.*")) %>% #Remove odd genus annotations
+  mutate(across(.cols = where(is.character), ~str_replace_all(., "_NK3B31_group", ""))) %>% # Fix wierd database match
+  apply(.,1, function(x) tail(stats::na.omit(x), 1))
+  
+
+tax_levels$best <- tax.best 
+
+tax_levels <- tax_levels %>%
+  dplyr::mutate_all(~na_if(., '')) %>%
+  dplyr::mutate(best = ifelse(is.na(.data[[rank]]), paste(best, "unclassified"), best))
+
+colnames(rcca) <- make.unique(tax_levels$best) %>% gsub("_", " ",.)
+
+# Align color vecors with clean tax names
+row.names(sample_col) <- colnames(rcca)
+#Add second annotation row
+#sample_col <- cbind(sample_col,sample_col_2)
+
+#############
+
+#Set colors
+ann_colors <- list(Class = rep(col_fil,3)[1:n_distinct(sample_col[,1])])
+
+sl(pheat.milkmet.faecbifido.2,pheatmap(rcca,
+         color=palette,
+         #border_color = NA,
+         angle_col = 45,
+         annotation_col = sample_col,
+         annotation_row =  metab.class.sel,
+         cutree_rows = 3,
+         cutree_cols = 3,
+         main = "C - Infant faecal bifidobacteria vs Milk metabolites"
+         ),
+   overwrite = TRUE
+)
+
+gridExtra::grid.arrange(pheat.milkmet.faecbifido.2$gtable, vp=viewport(width=0.95, height=1))
+
+```
+
+##### 0.175 cutoff
+
+```{r, eval = T, include = T, echo = T, message = F, warning =  F, fig.fullwidth = TRUE}
+###### Select RCCA output(with cutoff)
+rcca <- data.frame(high.175_2c$mat)
+
+
+library(pheatmap)
+
+palette <- hcl.colors(200, palette = "Zissou 1", alpha = NULL, rev = FALSE, fixup = TRUE) #Seclect palette https://developer.r-project.org/Blog/public/2019/04/01/hcl-based-color-palettes-in-grdevices/
+palette[46:155] <- "white" #Select which part of pallette to replace with white
+
+#Remove OTU IDs to only show taxonomy
+tax <- gsub(".*\\.", "", colnames(rcca)) %>% make.unique(sep="")
+tax
+otu <- gsub("\\..*", "", colnames(rcca)) %>% make.unique(sep="")
+otu
+
+colnames(rcca) <- tax
+
+######################## Annotations
+
+###########  x-axis annotation
+
+######## Phylogeny 1
+
+rank <-"Species"
+
+tax_levels <- ps@tax_table[otu,] %>%
+    data.frame() %>%
+  dplyr::select(1:rank) 
+
+##Select last non-empty taxonomic rank
+tax.best <- tax_levels %>% dplyr::mutate_all(~na_if(., '')) %>%
+  dplyr::mutate(Species = replace(Species, is.na(Species), "unclassified")) %>%
+  mutate(across(.cols = where(is.character), ~if_else(str_detect(., "uncultured"), NA_character_, .))) %>% # remove all "_uncultured"
+  apply(.,1, function(x) tail(stats::na.omit(x), 1)) #%>%
+  #sub("_.*", "",.)
+  
+
+tax_levels$best <-  sapply(strsplit(gsub("_", " ", tax.best), " "), function(x) tail(x, 1))
+
+sample_col <- tax_levels %>% dplyr::select(best) %>%
+  dplyr::rename(!!rank := best)
+
+######## Phylogeny 2 - not used 
+
+rank <-"Class"
+
+tax_levels <- ps@tax_table[otu,] %>%
+    data.frame() %>%
+  dplyr::select(1:rank) 
+
+##Select last non-empty taxonomic rank
+tax.best <- tax_levels %>% dplyr::mutate_all(~na_if(., '')) %>%
+  mutate(across(.cols = where(is.character), ~if_else(str_detect(., "uncultured"), NA_character_, .))) %>% # remove all "_uncultured"
+  apply(.,1, function(x) tail(stats::na.omit(x), 1)) %>%
+  sub("_.*", "",.)
+  
+
+tax_levels$best <- tax.best 
+sample_col_2 <- tax_levels %>% dplyr::select(best) %>%
+  dplyr::rename(!!rank := best)
+
+############ Y-axis annotation
+
+## Matbolite class
+
+rownames(rcca) 
+
+metab.class.sel <- metab.class[match(rownames(rcca), metab.class$Metabolite), ]
+
+# Convert the "Metabolite" column to row names
+rownames <- metab.class.sel$Metabolite
+
+# Remove the "Metabolite" column from the dataframe
+
+metab.class.sel <- metab.class.sel %>% as.data.frame() %>% dplyr::select(Class) 
+rownames(metab.class.sel) <- rownames
+metab.class.sel <- rename(metab.class.sel, Class = "Metabolite category")
+
+######################### Clean species names 
+
+##Select last non-empty taxonomic rank
+rank <-"Species"
+
+# x-axis annotation
+## Phylogeny
+tax_levels <- ps@tax_table[otu,] %>%
+    data.frame() %>%
+  dplyr::select(1:rank) 
+
+##Select last non-empty taxonomic rank
+tax.best <- tax_levels %>% dplyr::mutate_all(~na_if(., '')) %>%
+  mutate(across(.cols = where(is.character), ~if_else(str_detect(., "uncultured"), NA_character_, .))) %>% # remove all "_uncultured"
+  dplyr::mutate(Genus = str_remove(Genus, "_.*")) %>% #Remove odd genus annotations
+  mutate(across(.cols = where(is.character), ~str_replace_all(., "_NK3B31_group", ""))) %>% # Fix wierd database match
+  apply(.,1, function(x) tail(stats::na.omit(x), 1))
+  
+
+tax_levels$best <- tax.best 
+
+tax_levels <- tax_levels %>%
+  dplyr::mutate_all(~na_if(., '')) %>%
+  dplyr::mutate(best = ifelse(is.na(.data[[rank]]), paste(best, "unclassified"), best)) 
+
+colnames(rcca) <- make.unique(tax_levels$best) %>% gsub("_", " ",.)
+
+# Align color vecors with clean tax names
+row.names(sample_col) <- colnames(rcca)
+#Add second annotation row
+#sample_col <- cbind(sample_col,sample_col_2)
+
+#############
+
+#Set colors
+ann_colors <- list(Class = rep(col_fil,3)[1:n_distinct(sample_col[,1])])
+
+newnames <- lapply(
+  colnames(rcca),
+  function(x) bquote(italic(.(x))))
+
+sl(pheat.milkmet.faecbifido.175,pheatmap(rcca,
+         color=palette,
+         #border_color = NA,
+         #angle_col = 45,
+         annotation_col = sample_col,
+         annotation_row =  metab.class.sel,
+         cutree_rows = 4,
+         cutree_cols = 4,
+         labels_col = as.expression(newnames),
+         main = "C - Infant faecal bifidobacteria vs Milk metabolites"
+         ),
+   overwrite = TRUE
+)
+
+gridExtra::grid.arrange(pheat.milkmet.faecbifido.175$gtable, vp=viewport(width=0.95, height=1))
+
+```
+
+#### Network plots
+
+##### Shrinkage
+
+```{r, eval = T, include = T, echo = T, message = F, warning =  F, fig.width=10, fig.height=6, fig.fullwidth = TRUE}
+# Reformat for gephi
+
+## Save blocks as polygon to determine shape in network
+
+result$names$Polygon <- result$names$data
+result$names$Polygon <- replace(result$names$data, c("x","vy"),c(3,4)) %>% as.integer()
+
+## Remove ubique markers to allow shared coloring in Gephi
+result$names_simple$colnames$X <- gsub("*.\\_", "", result$names$colnames$X)
+result$names_simple$colnames$Y <- gsub("*.\\_", "", result$names$colnames$Y)
+
+#Show network
+
+network(result, comp = 1:2, interactive = FALSE,
+        lwd.edge = 2,
+        cutoff = 0.2,
+        color.node = col_fil[1:2])
+
+network(result, comp = 1:2, interactive = FALSE,
+        lwd.edge = 2,
+        cutoff = 0.15,
+        color.node = col_fil[1:2]) 
+
+
+library(igraph)
+
+#network.res 
+
+write.graph(network.res$gR, file = "network.shrinkage0.3.gml", format = "gml")
+```
+
+##### CV
+
+```{r, eval = T, include = T, echo = T, message = F, warning =  F, fig.width=10, fig.height=6, fig.fullwidth = TRUE}
+result.CV$names_simple$colnames$X <- gsub("*.\\_", "", result.CV$names$colnames$X)
+result.CV$names_simple$colnames$Y <- gsub("*.\\_", "", result.CV$names$colnames$Y)
+
+#Show network
+network(result.CV, comp = 1:2, interactive = FALSE,
+        lwd.edge = 2,
+        cutoff = 0.25,
+        color.node = col_fil[1:2]) 
+
+network(result.CV, comp = 1:2, interactive = FALSE,
+        lwd.edge = 2,
+        cutoff = 0.2,
+        color.node = col_fil[1:2]) 
+
+# network(result.CV, comp = 1:3, interactive = FALSE,
+#         lwd.edge = 2,
+#         cutoff = 0.5,
+#         color.node = col_fil[1:2]) 
+
+
+library(igraph)
+network.res <- network(result, comp = 1:2, interactive = FALSE,
+        lwd.edge = 2,
+        cutoff = 0.175,
+        color.node = col_fil[1:2])
+
+write.graph(network.res$gR, file = "network.CV0.3.gml", format = "gml")
+```
+
+## Milk bac vs infant faecal bac
+
+### Conversion and screeplot
+
+```{r, eval = F, include = T}
+#Subset samples present in both
+ps <- subset_samples(PSB.CSS, Sample.type == "Faecal sample" & RCID %in% PSB.CSS@sam_data$RCID)
+ps2 <- subset_samples(PSB.CSS, Sample.type == "Milk" & RCID %in% metab.id$RCID)
+
+ps <- subset_samples(ps, RCID %in% ps2@sam_data$RCID)
+ps2 <- subset_samples(ps2, RCID %in% ps@sam_data$RCID)
+
+ps <- prune_taxa(taxa_sums(ps) > 1, ps)
+ps2 <- prune_taxa(taxa_sums(ps2) > 1, ps2)
+
+
+#Extract ASV data
+x <- data.frame(ps2@otu_table)
+##Select last non-emptx taxonomic rank
+tax.bac <- as.data.frame(ps2@tax_table) %>% dplyr::mutate_all(~na_if(., '')) %>%
+  mutate(across(.cols = where(is.character), ~if_else(str_detect(., "uncultured"), NA_character_, .))) %>% # remove all "_uncultured" taxonomies (uninformative) 
+  mutate(across(.cols = where(is.character), ~str_replace_all(., "_sensu_stricto_1", ""))) %>% # remove all "sens strictu" (uninformative)
+  apply(.,1, function(x) tail(stats::na.omit(x), 1))
+#Combine otu_ids with taxonomies for unique identiiers
+rownames(x) <- paste(rownames(x),tax.bac, sep = "-")
+
+
+meta2 <- data.frame(ps2@sam_data)
+
+x<- t(x)
+
+#Extract ASV data
+y <- data.frame(ps@otu_table)
+##Select last non-empty taxonomic rank
+tax.bac <- as.data.frame(ps@tax_table) %>% dplyr::mutate_all(~na_if(., '')) %>%
+  mutate(across(.cols = where(is.character), ~if_else(str_detect(., "uncultured"), NA_character_, .))) %>% # remove all "_uncultured" taxonomies (uninformative)
+  apply(.,1, function(x) tail(stats::na.omit(x), 1))
+#Combine otu_ids with taxonomies for unique identiiers
+rownames(y) <- paste(rownames(y),tax.bac, sep = "-")
+
+
+meta <- data.frame(ps@sam_data)
+
+
+y <- t(y)
+
+
+    ##Converting and removing near-zero variance values
+library(mixOmics)
+
+nzv <- nearZeroVar(x)
+x <- x[, -nzv$Position]
+       
+           
+#vir <- mvirome[,-c(1)]
+nzv <- nearZeroVar(y) # If any
+y <- y[, -nzv$Position]
+
+  #PCA
+library(vegan)
+mod.x <- rda(x, scale = FALSE, center = FALSE)
+plot(mod.x, scaling = 3)
+screeplot(mod.x)
+mod.y <- rda(y, scale = FALSE, center = FALSE)
+plot(mod.y, scaling = 3)
+screeplot(mod.y)
+
+scaling = "ridge"
+  #Apply scaling 
+result_1comp <- rcc(x, y, method = scaling, ncomp = 1)
+result_2comp <- rcc(x, y, method = scaling, ncomp = 2)
+result_3comp <- rcc(x, y, method = scaling, ncomp = 3)
+result_4comp <- rcc(x, y, method = scaling, ncomp = 4)
+result_5comp <- rcc(x, y, method = scaling, ncomp = 5)
+result_6comp <- rcc(x, y, method = scaling, ncomp = 6)
+
+par(mfrow = c(2, 3))
+plot(result_1comp,main="1 Component")
+plot(result_2comp,main="2 Components")
+plot(result_3comp,main="3 Components")
+plot(result_4comp,main="4 Components")
+plot(result_5comp,main="5 Components")
+plot(result_6comp,main="6 Components")
+
+# produce a heat map of the cross correlation matrix
+imgCor(x, y, sideColors = c("purple", "green")) 
+```
+
+### Model tuning
+
+```{r, eval = T, include = T}
+# set grid search values for each regularisation parameter
+grid1 <- seq(0.001, 0.2, length = 10) 
+grid2 <- seq(0.001, 0.2, length = 10)
+
+# optimise the regularisation parameter values
+sl(cv.tune.rcc.milk.bac.faecal.bac, tune.rcc(x, y, grid1 = grid1, grid2 = grid2, 
+                                   validation = "loo"),overwrite = FALSE)
+
+# examine the results of CV tuning
+plot(cv.tune.rcc.milk.bac.faecal.bac)
+cv.tune.rcc.milk.bac.faecal.bac
+
+#manually set lambda scores
+#opt.l1 <- 1.7
+#opt.l2 <- 0.003
+opt.l1 <- cv.tune.rcc.milk.bac.faecal.bac$opt.lambda1
+opt.l2 <- cv.tune.rcc.milk.bac.faecal.bac$opt.lambda2
+```
+
+### Model and component selection
+
+```{r, eval = T, include = T}
+shrink.rcc <- rcc(x, y, method = "shrinkage")
+
+CV.rcc <- rcc(x, y, method = "ridge", 
+                         lambda1 = opt.l1,
+                         lambda2 = opt.l2) 
+
+# barplot of cross validation method rCCA canonical correlations
+plot(CV.rcc, type = "barplot", main = "Cross Validation") 
+
+# barplot of shrinkage method rCCA canonical correlations
+plot(shrink.rcc, type = "barplot", main = "Shrinkage")
+```
+
+### Run model
+
+```{r, eval = T, include = T}
+#Perfrom optimised CV rCCA
+
+result.CV <- rcc(x, y, method = "ridge",
+                         lambda1 = opt.l1,
+                         lambda2 = opt.l2,
+              ncomp=2)
+
+result.raw <- rcc(x, y, method = "shrinkage",ncomp=3)
+
+#Remove OTU IDs to only show taxonomy
+result <- result.raw
+
+result$names$colnames$X <- gsub(".*\\-", "", result$names$colnames$X) %>% make.unique(sep="_")
+result$names$colnames$Y <- gsub(".*\\-", "", result$names$colnames$Y) %>% make.unique(sep="_")
+
+
+# colnames(result$X) <- gsub(".*\\-", "", colnames(result$X))
+# colnames(result$Y) <- gsub(".*\\-", "", colnames(result$Y))
+
+# rownames(result$loadings$X) <- gsub(".*\\-", "", rownames(result$loadings$X))
+# rownames(result$loadings$Y) <- gsub(".*\\-", "", rownames(result$loadings$Y))
+
+
+```
+
+### Visualization
+
+#### Heatmaps 
+
+```{r, eval = T, include = T, echo = T, message = F, warning =  F, fig.fullwidth = TRUE}
+#Defne pallette to only add colour to only high
+##Generate new pallette
+palette <- hcl.colors(200, palette = "Zissou 1", alpha = NULL, rev = FALSE, fixup = TRUE) #Seclect palette https://developer.r-project.org/Blog/public/2019/04/01/hcl-based-color-palettes-in-grdevices/
+palette[61:140] <- "white" #Select which part of pallette to replace with white
+
+# high4_2c <- cim(result, comp = 1:2, ylab = "Bacteria", xlab = "Virome", margins = c(12,18),cutoff = 0.4, color = palette)
+# high45_2c <- cim(result, comp = 1:2, ylab = "Bacteria", xlab = "Virome", margins = c(12,18),cutoff = 0.45, color = palette)
+#high5_3c <- cim(result, comp = 1:2, ylab = "Bacteria", xlab = "Virome", margins = c(12,18),cutoff = 0.5, color = palette)
+
+#pdf(filename="high5_3c.pdf", res = 600, width = 4000, height = 4000)
+#high5_3c
+#dev.off()
+
+######
+
+high.3_3c <- cim(result, comp = 1:3, ylab = "Faecal bacteria", xlab = "Milk bacteria", margins = c(15,20),cutoff = 0.3, color = palette)
+
+high.275_3c <- cim(result, comp = 1:3, ylab = "Faecal bacteria", xlab = "Milk bacteria", margins = c(15,20),cutoff = 0.275, color = palette)
+
+high.25_3c <- cim(result, comp = 1:3, ylab = "Faecal bacteria", xlab = "Milk bacteria", margins = c(15,20),cutoff = 0.25, color = palette)
+
+high.225_3c <- cim(result, comp = 1:3, ylab = "Faecal bacteria", xlab = "Milk bacteria", margins = c(15,20),cutoff = 0.225, color = palette)
+
+high.21_3c <- cim(result, comp = 1:3, ylab = "Faecal bacteria", xlab = "Milk bacteria", margins = c(15,20),cutoff = 0.21, color = palette)
+
+high.2_3c <- cim(result, comp = 1:3, ylab = "Faecal bacteria", xlab = "Milk bacteria", margins = c(15,20),cutoff = 0.2, color = palette)
+
+high.175_3c <- cim(result, comp = 1:3, ylab = "Faecal bacteria", xlab = "Milk bacteria", margins = c(15,20),cutoff = 0.175, color = palette)
+
+high.15_3c <- cim(result, comp = 1:3, ylab = "Faecal bacteria", xlab = "Milk bacteria", margins = c(15,20),cutoff = 0.15, color = palette)
+
+mat.2_3c <- high.2_3c$mat
+
+ #Output Matrix
+#write.table(mat.2_3c, "Matrix_high_3-Component_0.45.txt", sep="\t")
+
+
+```
+
+#### Scatterplots
+
+```{r}
+mat.25_2c <- high.25_2c$mat
+mat.2_2c <- high.2_2c$mat
+
+#Make linear plots of all bac and vir
+x.25_2c <- x[,rownames(mat.25_2c)]
+y.25_2c <- y[,colnames(mat.25_2c)]
+xy.25_2c <- cbind(x.25_2c,y.25_2c)
+x.2_2c <- x[,rownames(mat.2_2c)]
+y.2_2c <- y[,colnames(mat.2_2c)]
+xy.2_2c <- cbind(x.2_2c,y.2_2c)
+
+#ggpairs
+library(GGally)
+
+#.25 matrix ggpairs
+pairs.25 <- ggpairs(as.data.frame(xy.25_2c))
+file_path <- "results/pairs.faec.bac.milk.metab.rcca.25.pdf"
+if (!file.exists(file_path)) {
+   ggsave(file_path,pairs.25,height=30,width=25,units="cm")
+} else {
+    cat("File already exists:", file_path, "\n")
+}
+
+#.2 matrix ggpairs
+pairs.2 <-ggpairs(as.data.frame(xy.2_2c))
+file_path <- "results/pairs.faec.bac.milk.metab.rcca.2.pdf"
+if (!file.exists(file_path)) {
+   ggsave(file_path,pairs.25,height=30,width=25,units="cm")
+} else {
+    cat("File already exists:", file_path, "\n")
+}
+```
+
+#### Heatmaps - Pheatmap
+
+##### 0.3 cutoff
+
+```{r, eval = T, include = T, echo = T, message = F, warning =  F, fig.fullwidth = TRUE}
+###### Select RCCA output(with cutoff)
+rcca <- data.frame(high.3_3c$mat)
+
+
+library(pheatmap)
+
+palette <- hcl.colors(200, palette = "Zissou 1", alpha = NULL, rev = FALSE, fixup = TRUE) #Seclect palette https://developer.r-project.org/Blog/public/2019/04/01/hcl-based-color-palettes-in-grdevices/
+palette[46:155] <- "white" #Select which part of pallette to replace with white
+
+#Remove OTU IDs to only show taxonomy
+tax <- gsub(".*\\.", "", colnames(rcca)) %>% make.unique(sep="")
+otu <- gsub("\\..*", "", colnames(rcca)) %>% make.unique(sep="")
+
+tax_y <- gsub(".*\\.", "", rownames(rcca)) %>% make.unique(sep="")
+otu_y <- gsub("\\-.*", "", rownames(rcca)) %>% make.unique(sep="")
+
+
+colnames(rcca) <- tax
+
+######################## Annotations
+
+###########  x-axis annotation
+
+######## Phylogeny 1
+
+rank <-"Family"
+
+tax_levels <- ps@tax_table[otu,] %>%
+    data.frame() %>%
+  dplyr::select(1:rank) 
+
+##Select last non-empty taxonomic rank
+tax.best <- tax_levels %>% dplyr::mutate_all(~na_if(., '')) %>%
+  mutate(across(.cols = where(is.character), ~if_else(str_detect(., "uncultured"), NA_character_, .))) %>% # remove all "_uncultured"
+  apply(.,1, function(x) tail(stats::na.omit(x), 1)) %>%
+  sub("_.*", "",.)
+  
+
+tax_levels$best <- tax.best 
+sample_col <- tax_levels %>% dplyr::select(best) %>%
+  dplyr::rename(!!rank := best)
+
+######## Phylogeny 2
+
+rank <-"Class"
+
+tax_levels <- ps@tax_table[otu,] %>%
+    data.frame() %>%
+  dplyr::select(1:rank) 
+
+##Select last non-empty taxonomic rank
+tax.best <- tax_levels %>% dplyr::mutate_all(~na_if(., '')) %>%
+  mutate(across(.cols = where(is.character), ~if_else(str_detect(., "uncultured"), NA_character_, .))) %>% # remove all "_uncultured"
+  apply(.,1, function(x) tail(stats::na.omit(x), 1)) %>%
+  sub("_.*", "",.)
+
+tax_levels$best <- tax.best 
+sample_col2 <- tax_levels %>% dplyr::select(best) %>%
+  dplyr::rename(!!rank := best)
+
+############ Y-axis annotation
+
+######## Phylogeny 1
+
+rank <-"Family"
+
+tax_levels_2 <- ps2@tax_table[otu_y,] %>%
+    data.frame() %>%
+  dplyr::select(1:rank) 
+
+##Select last non-empty taxonomic rank
+tax.best <- tax_levels_2 %>% dplyr::mutate_all(~na_if(., '')) %>%
+  mutate(across(.cols = where(is.character), ~if_else(str_detect(., "uncultured"), NA_character_, .))) %>% # remove all "_uncultured"
+  apply(.,1, function(x) tail(stats::na.omit(x), 1)) %>%
+  sub("_.*", "",.)
+  
+
+tax_levels_2$best <- tax.best 
+sample_col_y <- tax_levels_2 %>% dplyr::select(best) %>%
+  dplyr::rename(!!rank := best)
+
+######## Phylogeny 2
+
+rank <-"Class"
+
+tax_levels_2 <- ps2@tax_table[otu_y,] %>%
+    data.frame() %>%
+  dplyr::select(1:rank) 
+
+##Select last non-empty taxonomic rank
+tax.best <- tax_levels_2 %>% dplyr::mutate_all(~na_if(., '')) %>%
+  mutate(across(.cols = where(is.character), ~if_else(str_detect(., "uncultured"), NA_character_, .))) %>% # remove all "_uncultured"
+  apply(.,1, function(x) tail(stats::na.omit(x), 1)) %>%
+  sub("_.*", "",.)
+
+tax_levels_2$best <- tax.best 
+sample_col_y_2 <- tax_levels_2 %>% dplyr::select(best) %>%
+  dplyr::rename(!!rank := best)
+
+################################## Clean species names 
+
+##Select last non-empty taxonomic rank
+rank <-"Species"
+
+################## x-axis annotation
+
+## Phylogeny
+tax_levels <- ps@tax_table[otu,] %>%
+    data.frame() %>%
+  dplyr::select(1:rank) 
+
+##Select last non-empty taxonomic rank
+tax.best <- tax_levels %>% dplyr::mutate_all(~na_if(., '')) %>%
+  mutate(across(.cols = where(is.character), ~if_else(str_detect(., "uncultured"), NA_character_, .))) %>% # remove all "_uncultured"
+  dplyr::mutate(Genus = str_remove(Genus, "_.*")) %>% #Remove odd genus annotations
+  mutate(across(.cols = where(is.character), ~str_replace_all(., "_NK3B31_group", ""))) %>% # Fix wierd database match
+  apply(.,1, function(x) tail(stats::na.omit(x), 1))
+  
+
+tax_levels$best <- tax.best 
+
+tax_levels <- tax_levels %>%
+  dplyr::mutate_all(~na_if(., '')) %>%
+  dplyr::mutate(best = ifelse(is.na(.data[[rank]]), paste(best, "unclassified"), best)) 
+
+colnames(rcca) <- make.unique(tax_levels$best) %>% gsub("_", " ",.)
+
+# Align color vecors with clean tax names
+row.names(sample_col) <- colnames(rcca)
+#Add second annotation row
+sample_col <- cbind(sample_col,sample_col_2)
+
+################## y-axis annotation
+
+## Phylogeny
+tax_levels <- ps2@tax_table[otu_y,] %>%
+    data.frame() %>%
+  dplyr::select(1:rank) 
+
+##Select last non-empty taxonomic rank
+tax.best <- tax_levels %>% dplyr::mutate_all(~na_if(., '')) %>%
+  mutate(across(.cols = where(is.character), ~if_else(str_detect(., "uncultured"), NA_character_, .))) %>% # remove all "_uncultured"
+  dplyr::mutate(Genus = str_remove(Genus, "_.*")) %>% #Remove odd genus annotations
+  mutate(across(.cols = where(is.character), ~str_replace_all(., "_NK3B31_group", ""))) %>% # Fix wierd database match
+  apply(.,1, function(x) tail(stats::na.omit(x), 1))
+  
+
+tax_levels$best <- tax.best 
+
+tax_levels <- tax_levels %>%
+  dplyr::mutate_all(~na_if(., '')) %>%
+  dplyr::mutate(best = ifelse(is.na(.data[[rank]]), paste(best, "unclassified"), best)) 
+rownames(rcca) <- make.unique(tax_levels$best) %>% gsub("_", " ",.)
+
+# Align color vecors with clean tax names
+row.names(sample_col_y) <- rownames(rcca)
+#Add second annotation row
+sample_col_y <- cbind(sample_col_y,sample_col_y_2)
+
+
+#############
+
+sample_col <- sample_col %>%
+  dplyr::rename("Class faec" = Class, "Family faec" = Family)
+
+#Set colors
+ann_colors <- list(Class = rep(col_fil,3)[1:n_distinct(sample_col[,1])])
+
+sl(pheat.milkbac.faecbac.3,pheatmap(rcca,
+         color=palette,
+         #border_color = NA,
+         angle_col = 45,
+         annotation_col = sample_col,
+         annotation_row =  sample_col_y,
+         cutree_rows = 3,
+         cutree_cols = 3,
+         main = "Infant faecal bacteria vs Milk bacteria"
+         ),
+   overwrite = TRUE
+)
+
+gridExtra::grid.arrange(pheat.milkbac.faecbac.3$gtable, vp=viewport(width=0.95, height=1))
+
+```
+
+
+
+## Arrange heatmaps 
+
+```{r}
+library(ggplotify)
+library(patchwork)
+
+#overall
+
+p <- gridExtra::grid.arrange(pheat.milkmet.milkbac.2$gtable,
+                        pheat.milkmet.faecbac.21$gtable,
+                        heights	= c(1,1),
+                        vp=viewport(width=0.95, height=1))
+
+p
+
+ggsave("Figures/RCCA.tiff",p, width = 30, height = 30, units = "cm", dpi = 400) 
+
+ggsave("Figures/RCCA.pdf",p,width = 30, height = 30, units = "cm", dpi = 400)
+
+# Bifido plots
+
+p2 <- gridExtra::grid.arrange(pheat.milkmet.faecbifido.2$gtable,
+                        pheat.milkmet.faecbifido.175$gtable,
+                        vp=viewport(width=0.95, height=1))
+
+
+ggsave("Figures/RCCA_bifido.tiff",p2, width = 30, height = 30, units = "cm", dpi = 400) 
+
+ggsave("Figures/RCCA_bifido.pdf",p2,width = 30, height = 30, units = "cm", dpi = 400)
+
+# Combined
+
+p3 <- gridExtra::grid.arrange(pheat.milkmet.milkbac.2$gtable,
+                        pheat.milkmet.faecbac.225$gtable,
+                        pheat.milkmet.faecbifido.175$gtable,
+                        vp=viewport(width=0.95, height=1))
+
+
+ggsave("Figures/RCCA_comb.tiff", p3, width = 30, height = 45, units = "cm", dpi = 400) 
+
+ggsave("Figures/RCCA_comb.pdf", p3,width = 30, height = 45, units = "cm", dpi = 400)
+
+```
+
+
+# Multiblock spls
+
+```{r}
+library(mixOmics) # import the mixOmics library
+
+set.seed(123) # for reproducibility, remove for normal use
+```
+
+```{r}
+#Get shared id's
+ps1 <- subset_samples(PSB.CSS, Sample.type=="Milk") 
+
+ps2 <- subset_samples(PSB.CSS, Sample.type=="Faecal sample") 
+
+ids.shared <- intersect(intersect(ps1@sam_data$RCID, ps2@sam_data$RCID), metab.id$RCID) %>% sort()
+
+
+#Subset shared id and order by RCID 
+ps1 <- subset_samples(ps1, RCID%in%ids.shared)
+X1 <- data.frame(otu_table(ps1))[,order(ps1@sam_data$RCID)] %>%
+  t()
+rownames(X1) <- NULL
+
+ps2 <- subset_samples(ps2, RCID%in%ids.shared)
+X2 <- data.frame(otu_table(ps2))[,order(ps2@sam_data$RCID)] %>%
+  t()
+rownames(X2) <- NULL
+
+ 
+X3 <- subset(metab.id, RCID %in% ids.shared) %>%
+  arrange(RCID) %>%
+  dplyr::select(-RCID) %>%
+  dplyr::mutate(across(where(is.numeric), ~ifelse(. < 0, NA_real_, sqrt(.)))) %>% # Squere root normalization 
+  scale(.,scale=FALSE,center=TRUE)
+
+# compile these into a single X object
+X <- list('Milk_bacteria' = X1, 'Faecal_bacteria' = X2, 'Milk_metabolites' = X3) 
+
+lapply(X, dim) # check dimensions
+```
+
+##Initial Analysis
+
+###Pairwise PLS Comparisons
+
+Prior to tuning and fitting a MB-sPLS model, the datasets should be explored in a pairwise manner. While the focus is understanding how the two explantory datasets relate to the 'Milk bacteria' data, the relationship between the 'Faecal bacteria' and 'Milk metabolites' datasets is important to assess. These pairwise comparisons can be seen in Figure 1. Note that there were only 25 features from each dataframe selected and features with a correlation value lower than 0.5 were removed from the plot.
+
+Observing Figure 1(a), it seems that the selected 'Milk bacteria' features are all positively associated with the first component. There are a few 'Faecal bacteria' features that are highly correlated with these, but most are negatively associated with the first component. The opposite of this is the case when looking at the relationships between the 'Milk bacteria' and 'Milk metabolites' features (Figure 1(b)). The methlyation and 'Milk metabolites' features are highly negatively correlated with on another as can be seen in Figure 1©.
+
+```{r}
+# select arbitrary values of features to keep
+list.keepX = c(40, 40)
+list.keepY = c(40, 40)
+
+# generate three pairwise PLS models
+pls1 <- spls(X[["Milk_bacteria"]], X[["Faecal_bacteria"]], 
+             keepX = list.keepX, keepY = list.keepY)
+pls2 <- spls(X[["Milk_bacteria"]], X[["Milk_metabolites"]], 
+             keepX = list.keepX, keepY = list.keepY)
+pls3 <- spls(X[["Faecal_bacteria"]], X[["Milk_metabolites"]], 
+             keepX = list.keepX, keepY = list.keepY)
+
+# plot features of first PLS
+plotVar(pls1, cutoff = 0.3, title = "(a) 'Milk bacteria' vs 'Faecal bacteria'",
+        legend = c("'Milk bacteria'", "'Faecal bacteria'"),
+        var.names = FALSE, style = 'graphics',
+        pch = c(16, 17), cex = c(2,2),
+        col = c('darkorchid', 'lightgreen'))
+
+# plot features of second PLS
+plotVar(pls2, cutoff = 0.3, title = "(b) 'Milk bacteria' vs 'Milk metabolites'",
+        legend = c("'Milk bacteria'", "'Milk metabolites'"),
+        var.names = FALSE, style = 'graphics',
+        pch = c(16, 17), cex = c(2,2),
+        col = c('darkorchid', 'lightgreen'))
+
+# plot features of third PLS
+plotVar(pls3, cutoff = 0.3, title = "(c) 'Faecal bacteria' vs 'Milk metabolites'",
+        legend = c("'Faecal bacteria'", "'Milk metabolites'"),
+        var.names = FALSE, style = 'graphics',
+        pch = c(16, 17), cex = c(2,2),
+        col = c('darkorchid', 'lightgreen'))
+```
+
+Below the correlation between the X and Y components for each of the above sPLS models is shown.The RNA and methylation components are the most strongly correlated. The first components of the other two sPLS models showed correlation scores around 0.6.
+
+```{r}
+# calculate correlation of RNA and methylation
+cor(pls1$variates$X, pls1$variates$Y)
+```
+
+```{r}
+# calculate correlation of RNA and accessibility
+cor(pls2$variates$X, pls2$variates$Y)
+```
+
+```{r}
+# calculate correlation of methylation and accessibility
+cor(pls3$variates$X, pls3$variates$Y) 
+```
+
+## Initial Multiblock sPLS Model
+
+### Design
+
+As discussed in the N-Integration Methods page, the “design” of the model needs to be created with the type of relationships to be explored in mind. Based on the correlation values seen above, a full design of value 0.5 will be used. In reality, there would be more exploration and tuning involved in forming this design matrix.
+
+With a design in place, the initial MB-sPLS model can be generated. An arbitrarily high number of components (ncomp = 5) will be used.
+
+```{r}
+# for square matrix filled with 0.5s
+design = matrix(0.3, ncol = length(X), nrow = length(X), 
+                dimnames = list(names(X), names(X)))
+
+diag(design) = 0 # set diagonal to 0s
+
+basic.mbspls.model = block.spls(X, indY = 1, # generate basic model
+                                ncomp = 5, 
+                                design = design)
+```
+
+### Tuning
+
+Unfortunately, there are not yet methods within mixOmics which allow for the tuning of block.spls objects. Hence, the number of of components (and features per component) to use cannot be determined experimentally as in all the other case studies. If tuning is necessary, manually undergoing repeated cross-validation, assessing the regression's Mean Squared Error (MSE) and R2
+
+scores as components are added, is the way to achieve optimal parameter values.
+
+For simplicity within this vignette, arbitrary values will be selected and can be seen below. 
+
+```{r}
+choice.ncomp <- 3 
+choice.keepX <- list(Milk_bacteria = rep(100, 3), # 50 features per each component 
+                     Faecal_bacteria = rep(100, 3), 
+                     Milk_metabolites = rep(50, 3))
+```
+
+### Final model
+
+Using these selected parameter values, the final MB-sPLS model can be constructed.
+
+```{r}
+# generate final model using "tuned" parameters
+final.mbspls.model = block.spls(X, indY = 1,  
+                                ncomp = choice.ncomp, 
+                                keepX = choice.keepX,
+                                design = design)
+```
+```{r}
+plotIndiv(final.mbspls.model, ind.names = FALSE,
+          group = as.factor(ps1@sam_data$BMI.group), 
+          pch = as.factor(ps1@sam_data$Days),
+          col.per.group = col_fil[1:3], 
+          legend = TRUE, legend.title = 'Days', legend.title.pch = 'BMI group')
+
+```
+
+
+```{r}
+set.seed(422)
+
+#Sample random subset of samples
+samples <- sample(1:dim(X1)[1], 30)
+
+X1 <- X1[samples, ] 
+X2 <- X2[samples, ] 
+X3 <- X3[samples, ] 
+X.arrow <- list(Milk_bacteria = X1, Faecal_bacteria = X2, Milk_metabolites = X3)
+
+final.mbspls.model.arrow = block.spls(X.arrow, indY = 1, 
+                                ncomp = choice.ncomp, 
+                                keepX = choice.keepX,
+                                design = design)
+
+symbols <- list(Milk_bacteria = 1, Faecal_bacteria = 6, Milk_metabolites = 7)
+
+plotArrow(final.mbspls.model, ind.names = FALSE,
+          group = as.factor(ps1@sam_data$ID),
+          pch = symbols, pch.size = 3)
+
+plotArrow(final.mbspls.model.arrow, ind.names = FALSE,
+          group = as.factor(ps1@sam_data$Days[samples]),
+          pch = symbols, pch.size = 3)
+```
+
+```{r}
+plotVar(final.mbspls.model, var.names = FALSE,
+        legend = TRUE, cutoff = 0.5,
+        pch = c(0,1,2))
+```
+
+```{r}
+X.2 = list(Milk_bacteria = X1, 
+         Milk_metabolites = X3)
+
+list.keepX = list(Milk_bacteria = rep(25, 2), Milk_metabolites = rep(25,2))
+list.keepY = c(rep(25, 2))
+
+final.mbspls.model.circos = block.spls(X = X.2, Y = X2,
+                                  ncomp = 2, keepX = list.keepX,
+                                  keepY = list.keepY, design = 'full')
+
+
+## ---- out.width = "90%", fig.cap = "FIGURE 5: Circos plot from multiblock sPLS performed on the gastrulation data The plot represents the correlations greater than 0.8 between variables of different types, represented on the side quadrants", results = FALSE----
+tiff("Figures/MBsPLS.tiff",width = 6, height = 12, units = "in", pointsize = 12,res = 400)
+par(mfrow = c(2, 1))
+circosPlot(final.mbspls.model.circos,group=as.factor(ps1@sam_data$Days)[1:30], cutoff = 0.9,
+           Y.name = 'Faecal_bacteria')
+
+circosPlot(final.mbspls.model.circos,group=as.factor(ps1@sam_data$Days)[1:30], cutoff = 0.5,
+           Y.name = 'Faecal_bacteria')
+dev.off()
+
+pdf("Figures/MBsPLS.pdf",width = 6, height = 12)
+par(mfrow = c(2, 1))
+circosPlot(final.mbspls.model.circos,group=as.factor(ps1@sam_data$Days)[1:30], cutoff = 0.9,
+           Y.name = 'Faecal_bacteria')
+
+circosPlot(final.mbspls.model.circos,group=as.factor(ps1@sam_data$Days)[1:30], cutoff = 0.5,
+           Y.name = 'Faecal_bacteria')
+dev.off()
+
+```
+
+
+
+# Session info
+
+
+```{r}
+sessionInfo()
+```

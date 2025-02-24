@@ -1,0 +1,1075 @@
+---
+title: "Metadata formating and merging"
+author: "Rasmus Riemer Jakobsen"
+date: "`r Sys.time()`"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+link-citations: yes
+---
+
+```{r setup, include= FALSE, message= FALSE}
+subdir_name <- "0.1_metadata"
+
+#setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+
+dir.create("results", showWarnings = FALSE, recursive = TRUE)
+
+source("Supplementary_scripts/package_load_install.R")
+
+theme_set(theme_classic())
+
+knitr::opts_chunk$set(fig.width=12, fig.height=8, fig.fullwidth = TRUE,
+                      root.dir = setwd(dirname(rstudioapi::getActiveDocumentContext()$path))) #Set working directory to script directory 
+```
+
+# Metadata
+
+## Load raw metadata
+
+```{r, message = F}
+#Load pseudo anonymized metadata as exported from the RedCap secure platform
+
+meta.raw <- read.csv2("Data/ModermlkOgDensEffekt_DATA_2024-07-15_0954.csv",sep=",",na.strings = "")
+#meta.raw <- read.csv2("Data/ModermlkOgDensEffekt_DATA_2023-12-17_1710.csv",sep=",",na.strings = "") #Corrected id numbers
+meta.raw <- meta.raw %>%
+  mutate(fodt_kejs = ifelse(record_id == 134, 2, fodt_kejs)) #Add missing birth mode data for ID#134
+
+# test <- meta.raw %>% filter(record_id==134)
+# test$fodt_kejs
+
+# Load sample time points
+sample.dates <- readxl::read_xlsx("Data/Samples_overview_with_sample_ages_from_Katrine.xlsx") %>%
+  dplyr::rename("ID" = 1) %>%
+  dplyr::select(.,c("ID","Sample_age(3D)", "Sample_age(1MO)", "Sample_age(2MO)", "Sample_age(3MO)"))
+
+# Load HMO groups (and metabolome data)
+# metabolome.milk.lac <- readxl::read_xlsx("Data/HumanMilkMetabolites21112023.xlsx",2) #Milk metabolites normalized to total metabolites
+ metabolome.milk <- readxl::read_xlsx("Data/HumanMilkMetabolites21112023.xlsx",3) # Normalized with lactose weighted 1/3
+
+#Load gestational age
+
+#ga_mat <- read.delim2("Data/ModermlkOgDensEffekt-DeskriptivData_DATA_2023-12-17_1615.csv", sep = ',', stringsAsFactors = FALSE, check.names = FALSE, header = TRUE, fileEncoding="Latin1")  %>% dplyr::rename('ID' = 'record_id') 
+ 
+ga_mat <- read.delim2("Data/ModermlkOgDensEffekt-DeskriptivData_DATA_2024-04-04_0941.csv", sep = ',', stringsAsFactors = FALSE, check.names = FALSE, header = TRUE, fileEncoding="Latin1")  %>% dplyr::rename('ID' = 'record_id') 
+```
+
+## Extract and rename relevant columns
+
+Extracted columns
+
+```{r}
+ meta.dat <- meta.raw %>% dplyr::select(c(record_id,
+                                    rek_aar,
+                                    rek_hjd,
+                                    rek_vgt,
+                                    rek_tdl,
+                                    rek_tdl1,
+                                    bmi,
+                                    bio_kreak:bio_urat,
+                                    fodt_dato:dato1aar,
+                                    fodt_kejs,
+                                    #foedt_indgreb___0, # Maternal antibiotics: duplicate of fi_ab
+                                    foedt_indgreb___1,
+                                    foedt_gdm,
+                                    fodt_ga,
+                                    fi_gdm,
+                                    barn_koen,
+                                    fodt_bvaegt,
+                                    fi_blod,
+                                    fi_blod_pos,
+                                    fi_plac,
+                                    fi_foed_tid,
+                                    fi_ab,
+                                    fi_ab_postp,
+                                    spg1_er,
+                                    spg1_a_prop,
+                                    spg1_anti,
+                                    spg1_bvgt,
+                                    spg1_bhj,
+                                    spg1_bdato,
+                                    spg1_mvgt,
+                                    spg1_manti,
+                                    spg1_infek,
+                                    spg2_er,
+                                    spg2_a_prop,
+                                    spg2_anti,
+                                    spg2_bvgt,
+                                    spg2_bhj,
+                                    spg2_bdato,
+                                    spg2_mvgt,
+                                    spg2_manti,
+                                    spg2_infek,
+                                    spg3_er,
+                                    spg3_a_prop,
+                                    spg3_anti,
+                                    spg3_bv_gt,
+                                    spg3_bh_j,
+                                    spg3_bdato,
+                                    spg3_mvgt,
+                                    spg3_manti,
+                                    spg3_infek,
+                                    spg4_anti,
+                                    spg4_bvgt,
+                                    spg4_bhj,
+                                    spg4_bdato,
+                                    spg4_ff,
+                                    spg4_ff1,
+                                    m4_mc6_1_2,
+                                    spg5_anti,
+                                    spg5_bvgt,
+                                    spg5_bhj,
+                                    spg5_bdato,
+                                    spg5_ff,
+                                    spg5_mlk,
+                                    spg5_bvgt_2,
+                                    spg5_bhj_2,
+                                    spg5_bdato_2,
+                                    spg5_bvgt_3,
+                                    spg5_bhj_3,
+                                    spg5_bdato_3,
+                                    spg5_bvgt_3_v4,
+                                    spg5_bhj_3_v4,
+                                    spg5_bdato_3_v4
+                                  )
+)
+
+colnames(meta.dat)
+
+meta.dat <- meta.dat %>% dplyr::rename(c(ID = record_id,
+                'Maternal age' = rek_aar,
+                'Maternal height' = rek_hjd,
+                'Maternal weight' = rek_vgt,
+                Siblings = rek_tdl,
+                'No of siblings' = rek_tdl1,
+                ppBMI = bmi,
+                'C-section' = fodt_kejs,
+                #'Maternal antibiotics' = foedt_indgreb___0,
+                'Induction' = foedt_indgreb___1,
+                GDM = foedt_gdm,
+                'Infant sex' = barn_koen,
+                'Birth weight' = fodt_bvaegt,
+                'Blood type' = fi_blod,
+                'Rh factor' = fi_blod_pos,
+                'Placental weight' = fi_plac,
+                'Time of birth' = fi_foed_tid,
+                'Maternal AB during birth' = fi_ab,
+                'Maternal AB postbirth' = fi_ab_postp,
+                'Formula month 1' = spg1_er,
+                'Breastfeeding issues month 1' = spg1_a_prop,
+                'AB month 1' = spg1_anti,
+                'Weight month 1' = spg1_bvgt,
+                'Height month 1' = spg1_bhj,
+                'HW date month 1' = spg1_bdato,
+                'Maternal weight month 1' = spg1_mvgt,
+                'Maternal AB month 1' = spg1_manti,
+                'Breast infection month 1' = spg1_infek,
+                'Formula month 2' = spg2_er,
+                'Breastfeeding issues month 2' = spg2_a_prop,
+                'AB month 2' = spg2_anti,
+                'Weight month 2' = spg2_bvgt,
+                'Height month 2' = spg2_bhj,
+                'HW date month 2' = spg2_bdato,
+                'Maternal weight month 2' = spg2_mvgt,
+                'Maternal AB month 2' = spg2_manti,
+                'Breast infection month 2' = spg2_infek,
+                'Formula month 3' = spg3_er,
+                'Breastfeeding issues month 3' = spg3_a_prop,
+                'AB month 3' = spg3_anti,
+                'Weight month 3' = spg3_bv_gt,
+                'Height month 3' = spg3_bh_j,
+                'HW date month 3' = spg3_bdato,
+                'Maternal weight month 3' = spg3_mvgt,
+                'Maternal AB month 3' = spg3_manti,
+                'Breast infection month 3' = spg3_infek,
+                'AB month 6' = spg4_anti,
+                'Weight month 6' = spg4_bvgt,
+                'Height month 6' = spg4_bhj,
+                'HW date month 6' = spg4_bdato,
+                'Solid food month 6' = spg4_ff,
+                'Solid food start' = spg4_ff1,
+                'Breastfeeding frequency month 6' = m4_mc6_1_2,
+                'AB 1y' = spg5_anti,
+                'Weight 1y' = spg5_bvgt,
+                'Height 1y' = spg5_bhj,
+                'HW date 1y' = spg5_bdato,
+                'Solid food 1y' = spg5_ff,
+                'Breastfeeding frequency 1y' = spg5_mlk,
+                'Weight 2y' = spg5_bvgt_2,
+                'Height 2y' = spg5_bhj_2,
+                'HW date 2y' = spg5_bdato_2,
+                'Weight 3y' = spg5_bvgt_3,
+                'Height 3y' = spg5_bhj_3,
+                'HW date 3y' = spg5_bdato_3,
+                'Weight 4y' = spg5_bvgt_3_v4,
+                'Height 4y' = spg5_bhj_3_v4,
+                'HW date 4y' = spg5_bdato_3_v4,
+                )
+)
+```
+
+Renamed columns
+
+```{r, message = F}
+colnames(meta.dat)
+
+sort(colnames(meta.dat))
+```
+
+## Change encodings
+
+### c-sec, siblings
+
+```{r}
+recode.cols = c( "C-section", "Siblings")
+
+meta.dat <- meta.dat %>%
+  mutate(across(.cols = all_of(recode.cols), ~replace(., . == 2, 0)))
+
+head(dplyr::select(meta.dat,recode.cols))
+```
+
+
+### Infant sex
+
+```{r, message = F}
+#meta.dat <- meta.dat %>% mutate(across("Infant sex", str_replace_all, c("1"="2","0"="1")))
+
+meta.dat <- meta.dat %>%
+  mutate(across(.cols = "Infant sex", ~replace(., . == 0, 2)))
+```
+
+### Antibiotics
+
+```{r, message = F}
+#meta.dat <- meta.dat %>% mutate(across("Infant sex", str_replace_all, c("1"="2","0"="1")))
+
+meta.dat <- meta.dat %>%
+  mutate(across(.cols = contains("AB"), ~replace(., . == 2, 0)))
+
+meta.dat$`AB 1y`
+```
+
+### Breast infection
+
+```{r, message = F}
+#meta.dat <- meta.dat %>% mutate(across("Infant sex", str_replace_all, c("1"="2","0"="1")))
+
+meta.dat <- meta.dat %>%
+  mutate(across(.cols = contains("Breast"), ~replace(., . == 2, 0)))
+```
+
+## Make cumulative columns
+
+### Antibiotics
+
+#### Maternal
+
+```{r, message = F}
+meta.dat <- mutate(meta.dat, `Maternal AB pre post birth` = pmin(`Maternal AB postbirth`,`Maternal AB during birth`))
+
+meta.dat <- mutate(meta.dat, `Maternal AB cum 1 month` = pmin(`Maternal AB postbirth`,`Maternal AB during birth`,`Maternal AB month 1`))
+
+meta.dat <- mutate(meta.dat, `Maternal AB cum 2 month` = pmin(`Maternal AB postbirth`,`Maternal AB during birth`,`Maternal AB month 1`,`Maternal AB month 2`))
+
+meta.dat <- mutate(meta.dat, `Maternal AB cum 3 month` = pmin(`Maternal AB postbirth`,`Maternal AB during birth`,`Maternal AB month 1`,`Maternal AB month 2`,`Maternal AB month 3`))
+```
+
+#### Infant
+
+```{r, message = F}
+meta.dat <- mutate(meta.dat, `Infant AB cum 1 month` = pmin(`AB month 1`))
+
+meta.dat <- mutate(meta.dat, `Infant AB cum 2 month` = pmin(`AB month 1`,`AB month 2`))
+
+meta.dat <- mutate(meta.dat, `Infant AB cum 3 month` = pmin(`AB month 1`,`AB month 2`,`AB month 3`))
+
+meta.dat <- mutate(meta.dat, `Infant AB cum 6 month` = pmin(`AB month 1`,`AB month 2`,`AB month 3`,`AB month 6`))
+
+meta.dat <- mutate(meta.dat, `Infant AB cum 1y` = pmin(`AB month 1`,`AB month 2`,`AB month 3`,`AB month 6`,`AB 1y`))
+```
+
+### Breast infection
+
+```{r, message = F}
+meta.dat <- mutate(meta.dat, `Breast inf cum 1 month` = pmin(`Breast infection month 1`))
+
+meta.dat <- mutate(meta.dat, `Breast inf cum 2 month` = pmin(`Breast infection month 1`,`Breast infection month 2`))
+
+meta.dat <- mutate(meta.dat, `Breast inf cum 3 month` = pmin(`Breast infection month 1`,`Breast infection month 2`,`Breast infection month 3`))
+```
+
+
+
+# WHZ, HAZ, WAZ
+
+Using WHO Growth Reference (2006)
+
+### Format and check for outliers
+
+```{r, message = F}
+# Ádd exact day# of sample collections
+meta.dat <- dplyr::left_join(meta.dat,
+                             sample.dates,
+                             by="ID")
+
+columns_to_convert <- c("Height month 1",
+                        "Height month 6",
+                        "Height 1y",
+                        "Height 2y",
+                        "Height 3y",
+                        "Height 4y",
+                        "Weight month 1",
+                        "Weight month 6",
+                        "Weight 1y",
+                        "Weight 2y",
+                        "Weight 3y",
+                        "Weight 4y")
+
+# Convert the specified columns to numeric
+meta.dat[columns_to_convert] <- lapply(meta.dat[columns_to_convert], as.numeric)
+
+# Some values are entered as grams - divide high values by 1000 to convert to kg
+meta.dat <- meta.dat %>%
+   mutate(`Weight month 1` = ifelse(`Weight month 1` > 199, 
+                          `Weight month 1`/1000,
+                          `Weight month 1`))
+meta.dat <- meta.dat %>%
+   mutate(`Weight month 6` = ifelse(`Weight month 6` > 199, 
+                          `Weight month 6`/1000, 
+                          `Weight month 6`))
+
+meta.dat <- meta.dat %>%
+   mutate(`Weight 1y` = ifelse(`Weight 1y` > 199, 
+                          `Weight 1y`/1000, 
+                          `Weight 1y`))
+
+meta.dat <- meta.dat %>%
+   mutate(`Weight 2y` = ifelse(`Weight 2y` > 199, 
+                          `Weight 2y`/1000, 
+                          `Weight 2y`))
+
+meta.dat <- meta.dat %>%
+   mutate(`Weight 3y` = ifelse(`Weight 3y` > 199, 
+                          `Weight 3y`/1000, 
+                          `Weight 3y`))
+
+meta.dat <- meta.dat %>%
+   mutate(`Weight 4y` = ifelse(`Weight 4y` > 199, 
+                          `Weight 4y`/1000, 
+                          `Weight 4y`))
+
+# meta.dat$`30days` <- 30
+# meta.dat$`180days` <- 180
+
+#Calculate sample collection times from dates
+
+meta.dat$`30days` <- as.numeric(difftime(meta.dat$dato30, meta.dat$fodt_dat, units = "days"))
+meta.dat$`180days` <- as.numeric(difftime(meta.dat$dato180, meta.dat$fodt_dat, units = "days"))
+meta.dat$`1year` <- as.numeric(difftime(meta.dat$`HW date 1y`, meta.dat$fodt_dat, units = "days"))
+meta.dat$`2years` <- as.numeric(difftime(meta.dat$`HW date 2y`, meta.dat$fodt_dat, units = "days"))
+meta.dat$`3years` <- as.numeric(difftime(meta.dat$`HW date 3y`, meta.dat$fodt_dat, units = "days"))
+meta.dat$`4years` <- as.numeric(difftime(meta.dat$`HW date 4y`, meta.dat$fodt_dat, units = "days"))
+
+# Replace zeroes with NAs
+
+columns_to_modify <-  c("Height month 1",
+                        "Height month 6",
+                        "Height 1y",
+                        "Height 2y",
+                        "Height 3y",
+                        "Height 4y",
+                        "Weight month 1",
+                        "Weight month 6",
+                        "Weight 1y",
+                        "Weight 2y",
+                        "Weight 3y",
+                        "Weight 4y"
+                        )
+
+meta.dat <- meta.dat %>%
+  mutate(across(all_of(columns_to_modify), ~ replace(., . == 0, NA)))
+
+# Replace erroneous values
+
+
+meta.dat <- meta.dat  %>%
+  dplyr::mutate(`Height 1y` = if_else(ID == 146, 70, `Height 1y`)) %>%
+  dplyr::mutate(`Height 2y` = if_else(ID == 174, 85, `Height 2y`)) %>%
+  dplyr::mutate(`Weight 1y` = if_else(ID == 33, 13.0, `Weight 1y`)) %>%
+  dplyr::mutate(`Height month 1` = if_else(ID == 231, 60, `Height month 1`)) %>%
+  dplyr::mutate(`Height month 1` = if_else(ID == 18, 60, `Height month 1`)) %>%
+  dplyr::mutate(`Height 3y` = if_else(ID == 1, 100, `Height 3y`)) %>%
+  dplyr::mutate(`1year` = if_else(ID == 98, 360, `1year`))
+
+
+# Check outliers
+
+test <- meta.dat %>% dplyr::select(
+                      c("ID",
+                        "Height month 1",
+                        "Height month 6",
+                        "Height 1y",
+                        "Height 2y",
+                        "Height 3y",
+                        "Height 4y",
+                        "Weight month 1",
+                        "Weight month 6",
+                        "Weight 1y",
+                        "Weight 2y",
+                        "Weight 3y",
+                        "Weight 4y")
+                        ) %>%
+  dplyr::filter(rowSums(is.na(.)) <= 6)
+
+
+# Function to create a histogram plot for a given column
+plot_histogram <- function(column) {
+  ggplot(meta.dat, aes(x = .data[[column]])) +
+    geom_histogram(binwidth = 1, fill = "blue", color = "black", na.rm = TRUE) +
+    ggtitle(paste("Histogram of", column)) +
+    theme_minimal()
+}
+
+# List of column names
+columns <- c(           "Height month 1",
+                        "Height month 6",
+                        "Height 1y",
+                        "Height 2y",
+                        "Height 3y",
+                        "Height 4y",
+                        "Weight month 1",
+                        "Weight month 6",
+                        "Weight 1y",
+                        "Weight 2y",
+                        "Weight 3y",
+                        "Weight 4y"
+                        )
+
+# Create a list of plots
+plots <- lapply(columns, plot_histogram)
+
+# Arrange plots in a grid
+gridExtra::grid.arrange(grobs = plots, ncol = 3)
+
+```
+
+### Calculate scores
+
+```{r, message = F}
+
+
+# 1-6 months
+
+## Weight for height
+
+meta.dat <- addWGSR(data = meta.dat, sex = "Infant sex", firstPart = "Weight month 1",
+               secondPart = "Height month 1", index = "wfl", output = "whz.1m")
+
+meta.dat <- addWGSR(data = meta.dat, sex = "Infant sex", firstPart = "Weight month 6",
+               secondPart = "Height month 6", index = "wfl", output = "whz.6m")
+
+meta.dat$delta.whz <- meta.dat$whz.6m - meta.dat$whz.1m
+
+
+## Height for age
+meta.dat <- addWGSR(data = meta.dat, sex = "Infant sex", firstPart = "Height month 1",
+               secondPart = 'Sample_age(1MO)', index = "lfa", output = "haz.1m")
+
+meta.dat <- addWGSR(data = meta.dat, sex = "Infant sex", firstPart = "Height month 6",
+               secondPart = '180days', index = "lfa", output = "haz.6m")
+
+meta.dat$delta.haz <- meta.dat$haz.6m - meta.dat$haz.1m
+
+## Weight for age
+
+meta.dat <- addWGSR(data = meta.dat, sex = "Infant sex", firstPart = "Weight month 1",
+               secondPart = 'Sample_age(1MO)', index = "wfa", output = "waz.1m")
+
+meta.dat <- addWGSR(data = meta.dat, sex = "Infant sex", firstPart = "Weight month 6",
+               secondPart = '180days', index = "wfa", output = "waz.6m")
+
+meta.dat$delta.waz <- meta.dat$waz.6m - meta.dat$waz.1m
+
+# 1 year 
+
+## Weight for height
+meta.dat <- addWGSR(data = meta.dat, sex = "Infant sex", firstPart = "Weight 1y",
+               secondPart = "Height 1y", index = "wfl", output = "whz.1y")
+## Height for age
+meta.dat <- addWGSR(data = meta.dat, sex = "Infant sex", firstPart = "Height 1y",
+               secondPart = '1year', index = "lfa", output = "haz.1y")
+## Weight for age
+meta.dat <- addWGSR(data = meta.dat, sex = "Infant sex", firstPart = "Weight 1y",
+               secondPart = '1year', index = "wfa", output = "waz.1y")
+
+# 2 year 
+
+## Weight for height
+meta.dat <- addWGSR(data = meta.dat, sex = "Infant sex", firstPart = "Weight 2y",
+               secondPart = "Height 2y", index = "wfl", output = "whz.2y")
+## Height for age
+meta.dat <- addWGSR(data = meta.dat, sex = "Infant sex", firstPart = "Height 2y",
+               secondPart = '2years', index = "lfa", output = "haz.2y")
+## Weight for age
+meta.dat <- addWGSR(data = meta.dat, sex = "Infant sex", firstPart = "Weight 2y",
+               secondPart = '2years', index = "wfa", output = "waz.2y")
+
+# 3 year 
+
+## Weight for height
+meta.dat <- addWGSR(data = meta.dat, sex = "Infant sex", firstPart = "Weight 3y",
+               secondPart = "Height 3y", index = "wfl", output = "whz.3y")
+## Height for age
+meta.dat <- addWGSR(data = meta.dat, sex = "Infant sex", firstPart = "Height 3y",
+               secondPart = '3years', index = "lfa", output = "haz.3y")
+## Weight for age
+meta.dat <- addWGSR(data = meta.dat, sex = "Infant sex", firstPart = "Weight 3y",
+               secondPart = '3years', index = "wfa", output = "waz.3y")
+
+# 4 year 
+
+## Weight for height
+meta.dat <- addWGSR(data = meta.dat, sex = "Infant sex", firstPart = "Weight 4y",
+               secondPart = "Height 4y", index = "wfl", output = "whz.4y")
+## Height for age
+meta.dat <- addWGSR(data = meta.dat, sex = "Infant sex", firstPart = "Height 4y",
+               secondPart = '4years', index = "lfa", output = "haz.4y")
+## Weight for age
+meta.dat <- addWGSR(data = meta.dat, sex = "Infant sex", firstPart = "Weight 4y",
+               secondPart = '4years', index = "wfa", output = "waz.4y")
+
+
+```
+
+### Check scores
+
+```{r}
+
+
+# Function to create a histogram plot for a given column
+plot_histogram <- function(column) {
+  ggplot(meta.dat, aes(x = .data[[column]])) +
+    geom_histogram(binwidth = 1, fill = "blue", color = "black", na.rm = TRUE) +
+    ggtitle(paste("Histogram of", column)) +
+    theme_minimal()
+}
+
+# List of column names
+columns <- c("delta.whz","haz.1m","haz.6m","delta.haz","waz.1m","waz.6m","delta.waz","whz.1y","haz.1y","waz.1y","whz.2y","haz.2y","waz.2y","whz.3y","haz.3y","waz.3y","whz.4y","haz.4y")
+
+# Create a list of plots
+plots <- lapply(columns, plot_histogram)
+
+# Arrange plots in a grid
+gridExtra::grid.arrange(grobs = plots, ncol = 3)
+
+ztest <- dplyr::select(meta.dat,all_of(c("ID",columns)))
+```
+
+
+## Gestational age in days
+
+```{r, eval = T, message = F}
+# Make new columns
+
+#meta.dat <- left_join(meta.dat,ga_mat,by = "ID",keep = FALSE) 
+
+# Make column with gestational age in days
+meta.dat <- meta.dat %>% separate("fodt_ga",into=c("ga.weeks","ga.days"),sep="\\+",remove= FALSE) %>%
+  mutate('Gestational age'=as.numeric(ga.weeks)*7+as.numeric(ga.days)) %>% dplyr::select(-c(ga.weeks,ga.days))
+```
+
+## Secretor and Lewis status
+
+```{r, eval = T, message = F}
+sekretor <- metabolome.milk %>%
+  dplyr::select(c("RCid","Lewis","Secretor")) %>%
+  dplyr::distinct() %>%
+  dplyr::distinct(RCid,.keep_all = TRUE) %>% 
+  dplyr::rename("ID" = "RCid")
+
+
+
+#Check for duplicates, IE individuals with change in sekretor status
+sekretor %>% group_by(ID) %>% filter(n() > 1) %>% ungroup()
+
+meta.dat <- left_join(meta.dat,sekretor)
+```
+
+# BMI group
+
+```{r, eval = T, message = F}
+##Make BMI quartiles
+
+
+meta.dat$BMI.group = 
+  cut(as.numeric(meta.dat$ppBMI),
+      breaks = c(0,25,30,Inf),
+      include.lowest = TRUE,
+      labels = c("Normal", "Overweight", "Obese")
+  )
+
+
+## Make combine normal+ow to make a binary obese vs. non obese classification
+meta.dat$BMI.bin <- str_replace_all(meta.dat$BMI.group,c("^Normal$" = "NW/OW", "^Overweight$" = "NW/OW"))
+```
+
+### BMI changes over time
+
+```{r, eval = T, message = F}
+# Calculate bmi at birth and 
+
+meta.dat$BMI.1m = as.numeric(meta.dat$`Maternal weight month 1`)/(as.numeric(meta.dat$`Maternal height`)/100)^2
+meta.dat$BMI.3m = as.numeric(meta.dat$`Maternal weight month 3`)/(as.numeric(meta.dat$`Maternal height`)/100)^2
+
+# BMI change
+meta.dat$BMI.delta.preg = meta.dat$BMI.1m - as.numeric(meta.dat$ppBMI)
+
+meta.dat$BMI.delta.3m = meta.dat$BMI.3m - meta.dat$BMI.1m
+```
+
+# Infant BMI-for age scores
+
+```{r, message = F}
+# 1 year
+meta.dat <- addWGSR(data = meta.dat, sex = "Infant sex", firstPart = "Weight 1y",
+               secondPart = "Height 1y", thirdPart = "1year", index = "bfa", output = "BMIz.1y")
+
+# 2 years
+meta.dat <- addWGSR(data = meta.dat, sex = "Infant sex", firstPart = "Weight 2y",
+               secondPart = "Height 2y", thirdPart = "2years", index = "bfa", output = "BMIz.2y")
+
+# 3 years
+meta.dat <- addWGSR(data = meta.dat, sex = "Infant sex", firstPart = "Weight 3y",
+               secondPart = "Height 3y", thirdPart = "3years", index = "bfa", output = "BMIz.3y")
+``` 
+
+## BMI for age quartiles
+
+```{r, message = F}
+# 1 year
+meta.dat$BMIz.group.1y = 
+  cut(as.numeric(meta.dat$BMIz.1y),
+      breaks = c(-Inf,-2,1,2,Inf),
+      include.lowest = TRUE,
+      labels = c("Thin","Normal", "Overweight", "Obese")
+  )
+
+# 2 years
+meta.dat$BMIz.group.2y = 
+  cut(as.numeric(meta.dat$BMIz.2y),
+      breaks = c(-Inf,-2,1,2,Inf),
+      include.lowest = TRUE,
+      labels = c("Thin","Normal", "Overweight", "Obese")
+  )
+
+# 3 years
+meta.dat$BMIz.group.3y = 
+  cut(as.numeric(meta.dat$BMIz.3y),
+      breaks = c(-Inf,-2,1,2,Inf),
+      include.lowest = TRUE,
+      labels = c("Thin","Normal", "Overweight", "Obese")
+  )
+``` 
+
+# Sample data
+
+## Load raw sample data for 3 batches and combine
+
+```{r, message = F}
+map.b1 <- read.delim2("Data/Batch1_mapping_laca.txt", sep = '\t', stringsAsFactors = FALSE, check.names = FALSE, row.names = 1, header = TRUE, fileEncoding="Latin1")
+
+
+map.b2 <- read.delim2("Data/Batch2_mapping_laca.txt", sep = '\t', stringsAsFactors = FALSE, check.names = FALSE, row.names = 1, header = TRUE, fileEncoding="Latin1")
+
+map.b3 <- read.delim2("Data/Batch3_mapping_laca.txt", sep = '\t', stringsAsFactors = FALSE, check.names = FALSE, row.names = 1, header = TRUE, fileEncoding="Latin1")
+
+map_mat <- rbind(map.b1,map.b2,map.b3)
+
+str(map_mat)
+```
+
+## Generate non-character RCID column
+
+```{r, message = F}
+#Generate column with only RCIDs for samples - not empty or controls
+map_mat <- map_mat %>%
+  mutate(RCID = if_else(`Sample type` %in% c("Control", NA), NA, `RC id`)) %>%
+  mutate(RCID = gsub("[[a-zA-Z]", "", RCID))
+```
+
+## Split RCID and time point
+
+```{r, message = F}
+map_mat$RCID <- str_replace(map_mat$RCID,"-","_")
+
+#Split
+map_mat <- tidyr::separate(map_mat,col="RCID",sep="_",extra = "merge",into = c("ID","Day"),convert = TRUE,remove = FALSE)
+
+#Replace time point values for days
+map_mat$Days <- str_replace_all(map_mat$Day,c("3"="30","4"="60","5"="90","2"="3"))
+#map_mat$Days
+
+head(map_mat)
+```
+
+## Add sequncing run column and sample/negative/positive control column
+
+```{r, message = F}
+# Extract flowcell name from barcodes and add as a new column
+map_mat <- tibble::add_column(map_mat,
+                              seq.run = stringr::word(rownames(map_mat),2,-1,sep = "_"),
+                              .before = "Batch"
+                       )
+
+# Add coumn contining pos/neg control or sample type for non-crontrols
+map_mat <- tibble::add_column(map_mat,
+                              Control = stringr::str_extract(map_mat$`RC id`,"Pos|Neg"),
+                              .after = "RC id"
+                              ) %>%
+  dplyr::mutate(Control = dplyr::coalesce(Control,`Sample type`))
+
+```
+
+# Merge sample data and metadata
+
+## 16S bacterial data
+
+### Merge dataframes
+
+```{r, message = F}
+meta.dat$ID <- as.factor(meta.dat$ID)
+
+# Add additional metadata to mapping file by ID
+merged <- left_join(map_mat,meta.dat,by = "ID") 
+
+#Re-Add sample ids as rownames
+rownames(merged) <- rownames(map_mat)
+
+## Add NAs
+#merged <- merged %>% mutate(
+#  across(everything(), ~na_if(, ""))
+#  )
+
+## Make names safe for r
+colnames(merged) <- make.names(colnames(merged))
+merged <- tibble::rownames_to_column(merged,var='OTU.ID')
+#merged = dplyr::rename(merged, OTU.ID=X.OTU.ID)
+
+## Export merged otu_table
+merged.dat <- as.data.frame(merged)
+#%>% rownames_to_column("#OTU ID")
+
+########Fix mixed/contaminated faecal and vaginal swabs
+
+# Create metadata column with combined id and sample type 
+merged.dat <- merged.dat %>% unite(id.type,c("RCID","Sample.type"),remove= FALSE) 
+
+```
+
+### Add metadata to corresponding time points
+
+#### Antibiotics
+
+```{r, message = F}
+merged.dat <- merged.dat %>% mutate(AB.mother = if_else(Days == 3, Maternal.AB.pre.post.birth,
+                                                             if_else(Days == 30, Maternal.AB.month.1,
+                                                                     if_else(Days == 60, Maternal.AB.month.2,
+                                                                             if_else(Days == 90 , Maternal.AB.month.3,
+                                                                                     NA)))))
+
+merged.dat <- merged.dat %>% mutate(AB.mother.since_birth = if_else(Days == 3, Maternal.AB.pre.post.birth,
+                                                             if_else(Days == 30, Maternal.AB.cum.1.month,
+                                                                     if_else(Days == 60, Maternal.AB.cum.2.month,
+                                                                             if_else(Days == 90 , false = Maternal.AB.cum.3.month,
+                                                                                     NA)))))
+
+merged.dat <- merged.dat %>% dplyr::mutate(AB.infant = if_else(Days == Maternal.AB.during.birth, NA,
+                                                             if_else(Days == 30, AB.month.1,
+                                                                     if_else(Days == 60, AB.month.2,
+                                                                             if_else(Days == 90 , AB.month.3,
+                                                                                     NA)))))
+
+merged.dat <- merged.dat %>% mutate(AB.infant_since_birth = if_else(Days == 3, Maternal.AB.during.birth,
+                                                             if_else(Days == 30, Infant.AB.cum.1.month,
+                                                                     if_else(Days == 60, Infant.AB.cum.2.month,
+                                                                             if_else(Days == 90 , Infant.AB.cum.3.month,
+                                                                                     NA)))))
+```
+
+#### Breast infection
+
+```{r, message = F}
+merged.dat <- merged.dat %>% mutate(Breast.infection = if_else(Days == 3, Breast.infection.month.1,
+                                                             if_else(Days == 30, Breast.infection.month.1,
+                                                                     if_else(Days == 60, Breast.infection.month.2,
+                                                                             if_else(Days == 90 , Breast.infection.month.3,
+                                                                                     NA)))))
+
+merged.dat <- merged.dat %>% mutate(Breast.infection.since.birth = if_else(Days == 3, Breast.inf.cum.1.month,
+                                                             if_else(Days == 30, Breast.inf.cum.1.month,
+                                                                     if_else(Days == 60, Breast.inf.cum.2.month,
+                                                                             if_else(Days == 90 , Breast.inf.cum.3.month,
+                                                                                     NA)))))
+
+```
+
+#### Formula feeding
+
+```{r, message = F}
+merged.dat <- merged.dat %>% mutate(Formula = if_else(Days == 3, Formula.month.1,
+                                                             if_else(Days == 30, Formula.month.1,
+                                                                     if_else(Days == 60, Formula.month.2,
+                                                                             if_else(Days == 90 , Formula.month.3,
+                                                                                     NA)))))
+```
+
+#### Breastfeeding issues
+
+```{r, message = F}
+merged.dat <- merged.dat %>% mutate(Breastfeeding.issues = if_else(Days == 3, Breastfeeding.issues.month.1,
+                                                             if_else(Days == 30, Breastfeeding.issues.month.1,
+                                                                     if_else(Days == 60, Breastfeeding.issues.month.2,
+                                                                             if_else(Days == 90 , Breastfeeding.issues.month.3,
+                                                                                     NA)))))
+```
+
+
+#### Replace missing AB values with 2 (= No)
+
+```{r, message = F}
+
+merged.dat <- merged.dat %>%
+  mutate(AB.infant = replace_na(AB.infant, 2))
+
+merged.dat <- merged.dat %>%
+  mutate(AB.mother = replace_na(AB.mother, 2))
+
+merged.dat <- merged.dat %>%
+  mutate(Breast.infection = replace_na(Breast.infection, 2))
+```
+
+### Add niche and infant mother columns
+
+```{r, message = F}
+merged.dat <- merged.dat %>% mutate(Origin = if_else(Sample.type %in% c("Milk","Vaginal swab","Rectal swab","Skin swab"), "Mother",
+                                                     if_else(Sample.type %in% c("Faecal sample","Saliva swab"), "Infant",
+                                                             NA)),
+                                    .after = Sample.type)
+
+merged.dat <- merged.dat %>% mutate("Niche" = str_replace_all(Sample.type,
+                                                             c("Vaginal swab" = "Vagina",
+                                                               "Rectal swab" = "Maternal faeces",
+                                                               "Skin swab" = "Skin",
+                                                               "Faecal sample" = "Infant faeces",
+                                                               "Saliva swab" = "Saliva"
+                                                               )
+                                                             )
+)
+
+merged.dat <- merged.dat %>%
+    group_by(ID) %>%
+    mutate(both.infant.mother = all(c("Infant",'Mother') %in% Origin)) %>%
+    ungroup
+
+subset(merged.dat, both.infant.mother == TRUE) %>% dplyr::count(ID, sort = TRUE)
+
+merged.dat <- merged.dat %>% mutate(Birth.mode = recode(C.section, "1" = "C-section", "2" = "Vaginal"),
+                                    .after = C.section
+                                    )
+```
+
+### Save combined and merged metadata
+
+```{r, message = F}
+write.table(merged.dat,"Data/merged_metadata.txt",sep="\t",row.names = FALSE)
+
+write.table(meta.dat, "Data/metadata_expanded.txt",sep="\t",row.names = FALSE)
+
+```
+
+## Metabolome
+
+### Split metabolite and metadata
+
+```{r}
+
+metab <- metabolome.milk %>%
+  dplyr::select(Lactose:`τ-Methylhistidine`)
+
+metab.meta <- metabolome.milk %>%
+ dplyr::select(!(Lactose:`τ-Methylhistidine`))
+#Replace time point values for days
+
+# A combined ID-time column for metabolome
+metab.meta$RCID <- paste(metab.meta$RCid,metab.meta$Time,sep = "_")
+#Add RCIDs to dataframe
+metab <- tibble::add_column(metab,RCID = metab.meta$RCID,.before=1)
+
+metab.meta <- metab.meta %>% dplyr::select(-ID)
+metab.meta <- metab.meta %>% dplyr::rename(ID = RCid)
+metab.meta$ID <- as.factor(metab.meta$ID)
+
+#Replace time point values for days
+metab.meta$Days <- str_replace_all(metab.meta$Time,c("3"="30","4"="60","5"="90","2"="3"))
+
+
+
+# metab.meta$Days <- str_replace_all(metab.meta$Time,c("3"="30","4"="60","5"="90","2"="3"))
+# metab.meta$Lewis <- as.factor(metab.meta$Lewis.x)
+# metab.meta$Secretor <- as.factor(metab.meta$Secretor.x)
+# metab.meta$Gestational_age <- as.numeric(metab.meta$`Gestational age`)
+```
+
+### Merge dataframes
+
+```{r, message = F}
+
+
+# Add additional metadata to mapping file by ID
+merged <- left_join(metab.meta,meta.dat,by = "ID",keep = FALSE) 
+
+merged$Lewis <- merged$Lewis.x
+merged <- merged %>% dplyr::select(-c(Lewis.x,Lewis.y))
+
+merged$Secretor <- merged$Secretor.x
+merged <- merged %>% dplyr::select(-c(Secretor.x,Secretor.y))
+
+colnames(merged) <- make.names(colnames(merged))
+
+## Export merged otu_table
+merged.dat <- as.data.frame(merged)
+#%>% rownames_to_column("#OTU ID")
+
+########Fix mixed/contaminated faecal and vaginal swabs
+
+# Create metadata column with combined id and sample type 
+merged.dat$id.type <- paste(merged.dat$RCID,"Milk",sep="_") 
+
+```
+
+### Add metadata to corresponding time points
+
+#### Antibiotics
+
+```{r, message = F}
+merged.dat <- merged.dat %>% mutate(AB.mother = if_else(Days == 3, Maternal.AB.pre.post.birth,
+                                                             if_else(Days == 30, Maternal.AB.month.1,
+                                                                     if_else(Days == 60, Maternal.AB.month.2,
+                                                                             if_else(Days == 90 , Maternal.AB.month.3,
+                                                                                     NA)))))
+
+merged.dat <- merged.dat %>% mutate(AB.mother.since_birth = if_else(Days == 3, Maternal.AB.pre.post.birth,
+                                                             if_else(Days == 30, Maternal.AB.cum.1.month,
+                                                                     if_else(Days == 60, Maternal.AB.cum.2.month,
+                                                                             if_else(Days == 90 , Maternal.AB.cum.3.month,
+                                                                                     NA)))))
+
+merged.dat <- merged.dat %>% mutate(AB.infant = if_else(Days == Maternal.AB.during.birth, NA,
+                                                             if_else(Days == 30, AB.month.1,
+                                                                     if_else(Days == 60, AB.month.2,
+                                                                             if_else(Days == 90 , AB.month.3,
+                                                                                     NA)))))
+
+merged.dat <- merged.dat %>% mutate(AB.infant_since_birth = if_else(Days == 3, Maternal.AB.during.birth,
+                                                             if_else(Days == 30, Infant.AB.cum.1.month,
+                                                                     if_else(Days == 60, Infant.AB.cum.2.month,
+                                                                             if_else(Days == 90 , Infant.AB.cum.3.month,
+                                                                                     NA)))))
+
+
+```
+
+#### Breast infection
+
+```{r, message = F}
+merged.dat <- merged.dat %>% mutate(Breast.infection = if_else(Days == 3, Breast.infection.month.1,
+                                                             if_else(Days == 30, Breast.infection.month.1,
+                                                                     if_else(Days == 60, Breast.infection.month.2,
+                                                                             if_else(Days == 90 , Breast.infection.month.3,
+                                                                                     NA)))))
+
+merged.dat <- merged.dat %>% mutate(Breast.infection.since.birth = if_else(Days == 3, Breast.inf.cum.1.month,
+                                                             if_else(Days == 30, Breast.inf.cum.1.month,
+                                                                     if_else(Days == 60, Breast.inf.cum.2.month,
+                                                                             if_else(Days == 90 , Breast.inf.cum.3.month,
+                                                                                     NA)))))
+
+```
+
+#### Formula feeding
+
+```{r, message = F}
+merged.dat <- merged.dat %>% mutate(Formula = if_else(Days == 3, Formula.month.1,
+                                                             if_else(Days == 30, Formula.month.1,
+                                                                     if_else(Days == 60, Formula.month.2,
+                                                                             if_else(Days == 90 , Formula.month.3,
+                                                                                     NA)))))
+```
+
+#### Breastfeeding issues
+
+```{r, message = F}
+merged.dat <- merged.dat %>% mutate(Breastfeeding.issues = if_else(Days == 3, Breastfeeding.issues.month.1,
+                                                             if_else(Days == 30, Breastfeeding.issues.month.1,
+                                                                     if_else(Days == 60, Breastfeeding.issues.month.2,
+                                                                             if_else(Days == 90 , Breastfeeding.issues.month.3,
+                                                                                     NA)))))
+```
+
+### Add niche and infant mother columns - not run
+
+```{r, message = F, eval= FALSE}
+merged.dat <- merged.dat %>% mutate(Origin = if_else(Sample.type %in% c("Milk","Vaginal swab","Rectal swab","Skin swab"), "Mother",
+                                                     if_else(Sample.type %in% c("Faecal sample","Saliva swab"), "Infant",
+                                                             NA)),
+                                    .after = Sample.type)
+
+merged.dat <- merged.dat %>% mutate("Niche" = str_replace_all(Sample.type,
+                                                             c("Vaginal swab" = "Vagina",
+                                                               "Rectal swab" = "Maternal faeces",
+                                                               "Skin swab" = "Skin",
+                                                               "Faecal sample" = "Infant faeces",
+                                                               "Saliva swab" = "Saliva"
+                                                               )
+                                                             )
+)
+
+merged.dat <- merged.dat %>%
+    group_by(ID) %>%
+    mutate(both.infant.mother = all(c("Infant",'Mother') %in% Origin)) %>%
+    ungroup
+
+subset(merged.dat, both.infant.mother == TRUE) %>% dplyr::count(ID, sort = TRUE)
+
+merged.dat <- merged.dat %>% mutate(Birth.mode = recode(C.section, "1" = "C-section", "2" = "Vaginal"),
+                                    .after = C.section
+                                    )
+```
+
+
+
+
+### Save combined and merged metadata
+
+```{r, message = F}
+#Save files
+write.table(metab,"Data/metabolome_milk.txt",sep="\t",row.names = FALSE)
+
+write.table(merged.dat, "Data/metadata_metabome_milk.txt",sep="\t",row.names = FALSE)
+
+
+rm(list = ls())
+```
+
+# To do
+
+-   check `#TODO` in this script (mostly checks of composition).
+
+# SessionInfo
+
+```{r}
+sessionInfo()
+```

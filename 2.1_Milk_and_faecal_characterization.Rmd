@@ -1,0 +1,3517 @@
+---
+title: "2.1_Milk_and_faecal_characterization"
+author: "Rasmus Riemer Jakobsen"
+date: "`r Sys.time()`"
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+link-citations: yes
+---
+
+```{r setup, include=F, message=F, warning=F}
+subdir_name <- "2.1_Milk_and_faecal_characterization"
+
+#Load packages
+source("Supplementary_scripts/package_load_install.R")
+#Load utility functions
+source("Supplementary_scripts/utils.R")
+
+dir.create("results", showWarnings = FALSE, recursive = TRUE)
+
+#source("Supplementary_scripts/create_stability.R")
+
+#source("Phyloseq_import_CSS_16S_laca.R")
+load("0.3_deduplicated_and_decontaminated.RData")
+
+
+theme_set(theme_classic())
+
+knitr::opts_chunk$set(fig.width=12, fig.height=8, fig.fullwidth = TRUE,
+                      root.dir = setwd(dirname(rstudioapi::getActiveDocumentContext()$path)) #Set working directory to script directory 
+)
+
+#Coulour pallettes
+col_fil <- brewer.pal(8, "Dark2") #pal_jco("default")(10)
+
+col_scale <- scale_fill_distiller(palette = "Dark2")
+```
+
+```{r}
+source(here::here("Supplementary_scripts","package_load_install.R")) 
+source(here::here("Supplementary_scripts","utils.R")) # please see the src-folder for some custom functions used in 
+#source(here::here("src", "run_clusterprofiler.R"))
+```
+
+```{r knit, echo=F, eval=FALSE}
+rmarkdown::render(
+  input = here(str_c(subdir_name, ".Rmd")),
+  output_dir = here("results", "reports")
+)
+```
+
+
+```{r, message = F,eval=F}
+# Collapse all to Genus level
+
+PSB <- tax_glom(PSB,taxrank="Genus")
+PSB.all <- tax_glom(PSB.all,taxrank="Genus")
+
+PSB.CSS <- tax_glom(PSB.CSS,taxrank="Genus")
+PSB.CSS.all <- tax_glom(PSB.CSS.all,taxrank="Genus")
+
+PSB.rar <- tax_glom(PSB.rar,taxrank="Genus")
+PSB.rar.notrim <- tax_glom(PSB.rar.notrim,taxrank="Genus")
+```
+
+# Barplots
+
+## Sample types
+
+```{r, message = F}
+
+#Collapse to genus level
+bac.phyl <- PSB.genus
+
+ps1 <- transform_sample_counts(bac.phyl, function(x) x / sum(x))
+
+ps1<- merge_samples(ps1, "Sample.type")
+
+ps1 <- transform_sample_counts(ps1, function(x) x / sum(x))
+
+#Create melted dataframe
+df <- psmelt(ps1)
+
+#Select last non-empty taxonomic rank
+df[df==""] <- NA
+df$tax <- apply(df, 1, function(x) tail(na.omit(x), 1))
+
+#Arrange samples by mean abundance
+top <- df %>%
+  group_by(tax) %>%
+  dplyr::summarize(Mean = mean(Abundance)) %>%
+  arrange(-Mean)
+#Show top
+#top
+
+top10 <- top$tax[1:20]
+df0 <- df %>%
+  mutate(tax = forcats::fct_other(tax, c(as.matrix(top10))))
+
+df0 <- df0[order(df0$Sample, decreasing = TRUE), ]
+
+#Set order for samples
+#df0$Treatment <- factor(df0$Treatment, levels = c("Control", "Amp", "FOP", "LM", "LM+Amp", "LM+FOP"))
+
+#Set Hours as factor
+#$Hours <- factor(df0$Hours, levels = c("3h", "6h", "24h"))
+
+barplot.type.phylum.assigned <- ggplot(df0, aes(Sample, Abundance, fill = forcats::fct_reorder(tax, Abundance, .fun = mean))) +
+  geom_col(width = 0.8) +
+  scale_fill_manual(values=rep(col_fil,5),name="Genus")+
+  theme_classic() +
+  theme(        #panel.border = element_blank(),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        axis.text.x=element_text(angle = -45, vjust = 0.8, hjust = 0),
+        strip.text.x = element_text(angle = 0,  face = "bold"),
+        legend.key.height = unit(0.5, 'cm'),
+        legend.text = element_text(face = "italic"),
+        #legend.position = "none")
+  ) +
+  ylab("Relative abundance")
+
+barplot.type.phylum.assigned
+```
+
+## Milk samples
+
+### Genus
+
+```{r, message = F}
+
+#Collapse to genus level
+bac.phyl <- subset_samples(PSB.genus, Sample.type == "Milk")
+
+ps1 <- transform_sample_counts(bac.phyl, function(x) x / sum(x))
+
+ps1<- merge_samples(ps1, "Days")
+
+ps1 <- transform_sample_counts(ps1, function(x) x / sum(x))
+
+#Create melted dataframe
+df <- psmelt(ps1)
+
+#Select last non-empty taxonomic rank
+df[df==""] <- NA
+df$tax <- apply(df, 1, function(x) tail(na.omit(x), 1))
+
+#Arrange samples by mean abundance
+top <- df %>%
+  group_by(tax) %>%
+  dplyr::summarize(Mean = mean(Abundance)) %>%
+  arrange(-Mean)
+#Show top
+#top
+
+top10 <- top$tax[1:10]
+df0 <- df %>%
+  mutate(tax = forcats::fct_other(tax, c(as.matrix(top10))))
+
+df0 <- df0[order(df0$Sample, decreasing = TRUE), ]
+
+#Set order for samples
+#df0$Treatment <- factor(df0$Treatment, levels = c("Control", "Amp", "FOP", "LM", "LM+Amp", "LM+FOP"))
+
+#Set Hours as factor
+#$Hours <- factor(df0$Hours, levels = c("3h", "6h", "24h"))
+
+df0$tax <- forcats::fct_reorder(df0$tax, df0$Abundance, .fun = mean)
+labels = levels(df0$tax)
+labels[labels != "Other"] <- paste0("*", labels[labels != "Other"], "*")
+bar.fill <- c("grey",rep(col_fil,5)[1:length(levels(df0$tax))-1]) # Set grey as last color = Other
+
+barplot.milk.days.genus <- ggplot(df0, aes(Sample, Abundance, fill = forcats::fct_reorder(tax, Abundance, .fun = mean))) +
+  geom_col(width = 0.8) +
+  scale_fill_manual(values=bar.fill,name="Genus",labels = labels)+
+  theme_classic() +
+  theme(strip.background = element_rect(colour = "white", fill = "white"),
+        strip.text.x = element_text(angle = 0,  face = "bold"),
+        legend.key.height = unit(0.5, 'cm'),
+        legend.text = element_markdown(),
+        plot.title = element_text(hjust = 0.5)
+  ) +
+  ylab("Relative abundance")+
+  xlab("Days after birth") +
+  ggtitle("Milk")
+
+sl(barplot.milk.days.genus,barplot.milk.days.genus,overwrite=T)
+
+
+barplot.milk.days.genus
+
+```
+
+### Family
+
+```{r, message = F}
+
+#Collapse to genus level
+bac.phyl <- subset_samples(PSB.family, Sample.type == "Milk")
+
+ps1 <- transform_sample_counts(bac.phyl, function(x) x / sum(x))
+
+ps1<- merge_samples(ps1, "Days")
+
+ps1 <- transform_sample_counts(ps1, function(x) x / sum(x))
+
+#Create melted dataframe
+df <- psmelt(ps1)
+
+#Select last non-empty taxonomic rank
+df[df==""] <- NA
+df$tax <- apply(df, 1, function(x) tail(na.omit(x), 1))
+
+#Arrange samples by mean abundance
+top <- df %>%
+  group_by(tax) %>%
+  dplyr::summarize(Mean = mean(Abundance)) %>%
+  arrange(-Mean)
+#Show top
+#top
+
+top10 <- top$tax[1:10]
+df0 <- df %>%
+  mutate(tax = forcats::fct_other(tax, c(as.matrix(top10))))
+
+df0 <- df0[order(df0$Sample, decreasing = TRUE), ]
+
+#Set order for samples
+#df0$Treatment <- factor(df0$Treatment, levels = c("Control", "Amp", "FOP", "LM", "LM+Amp", "LM+FOP"))
+
+#Set Hours as factor
+#$Hours <- factor(df0$Hours, levels = c("3h", "6h", "24h"))
+
+barplot.milk.days.family <- ggplot(df0, aes(Sample, Abundance, fill = forcats::fct_reorder(tax, Abundance, .fun = mean))) +
+  geom_col(width = 0.8) +
+  scale_fill_jco(name = "Taxonomy") +
+  scale_fill_manual(values=rep(col_fil,5),name="Family")+
+  theme_classic() +
+  theme(        #panel.border = element_blank(),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        #axis.text.x=element_text(angle = -45, vjust = 0.8, hjust = 0),
+        strip.text.x = element_text(angle = 0,  face = "bold"),
+        legend.key.height = unit(0.5, 'cm'),
+        legend.text = element_text(face = "italic"),
+        #legend.position = "none")
+  ) +
+  ylab("Relative abundance")+
+  xlab("Day")
+
+barplot.milk.days.family
+```
+
+## Infant faecal samples
+
+### Genus
+
+```{r, message = F}
+
+#Collapse to genus level
+bac.phyl <- subset_samples(PSB.genus, Sample.type == "Faecal sample")
+
+ps1 <- transform_sample_counts(bac.phyl, function(x) x / sum(x))
+
+ps1<- merge_samples(ps1, "Days")
+
+ps1 <- transform_sample_counts(ps1, function(x) x / sum(x))
+
+#Create melted dataframe
+df <- psmelt(ps1)
+
+#Select last non-empty taxonomic rank
+df[df==""] <- NA
+df$tax <- apply(df, 1, function(x) tail(na.omit(x), 1))
+
+#Arrange samples by mean abundance
+top <- df %>%
+  group_by(tax) %>%
+  dplyr::summarize(Mean = mean(Abundance)) %>%
+  arrange(-Mean)
+#Show top
+#top
+
+top10 <- top$tax[1:10]
+df0 <- df %>%
+  mutate(tax = forcats::fct_other(tax, c(as.matrix(top10))))
+
+df0 <- df0[order(df0$Sample, decreasing = TRUE), ]
+
+#Set order for samples
+#df0$Treatment <- factor(df0$Treatment, levels = c("Control", "Amp", "FOP", "LM", "LM+Amp", "LM+FOP"))
+
+#Set Hours as factor
+#$Hours <- factor(df0$Hours, levels = c("3h", "6h", "24h"))
+
+df0$tax <- forcats::fct_reorder(df0$tax, df0$Abundance, .fun = mean)
+labels = levels(df0$tax)
+labels[labels != "Other"] <- paste0("*", labels[labels != "Other"], "*")
+bar.fill <- c("grey",rep(col_fil,5)[1:length(levels(df0$tax))-1]) # Set grey as last color = Other
+
+barplot.faecal.days.genus <- ggplot(df0, aes(Sample, Abundance, fill = tax)) +
+  geom_col(width = 0.8) +
+  scale_fill_manual(values=bar.fill,name="Genus",labels = labels)+
+  theme_classic() +
+  theme(strip.background = element_rect(colour = "white", fill = "white"),
+        strip.text.x = element_text(angle = 0,  face = "bold"),
+        legend.key.height = unit(0.5, 'cm'),
+        legend.text = element_markdown(),
+        plot.title = element_text(hjust = 0.5)
+  ) +
+  ylab("Relative abundance")+
+  xlab("Days after birth") +
+  ggtitle("Infant faeces")
+
+sl(barplot.faecal.days.genus,barplot.faecal.days.genus,overwrite = T)
+
+barplot.faecal.days.genus
+```
+
+
+
+### Family
+
+```{r, message = F}
+
+#Collapse to genus level
+bac.phyl <- subset_samples(PSB.family, Sample.type == "Milk")
+
+ps1 <- transform_sample_counts(bac.phyl, function(x) x / sum(x))
+
+ps1<- merge_samples(ps1, "Days")
+
+ps1 <- transform_sample_counts(ps1, function(x) x / sum(x))
+
+#Create melted dataframe
+df <- psmelt(ps1)
+
+#Select last non-empty taxonomic rank
+df[df==""] <- NA
+df$tax <- apply(df, 1, function(x) tail(na.omit(x), 1))
+
+#Arrange samples by mean abundance
+top <- df %>%
+  group_by(tax) %>%
+  dplyr::summarize(Mean = mean(Abundance)) %>%
+  arrange(-Mean)
+#Show top
+#top
+
+top10 <- top$tax[1:10]
+df0 <- df %>%
+  mutate(tax = forcats::fct_other(tax, c(as.matrix(top10))))
+
+df0 <- df0[order(df0$Sample, decreasing = TRUE), ]
+
+#Set order for samples
+#df0$Treatment <- factor(df0$Treatment, levels = c("Control", "Amp", "FOP", "LM", "LM+Amp", "LM+FOP"))
+
+#Set Hours as factor
+#$Hours <- factor(df0$Hours, levels = c("3h", "6h", "24h"))
+
+barplot.milk.days.family <- ggplot(df0, aes(Sample, Abundance, fill = forcats::fct_reorder(tax, Abundance, .fun = mean))) +
+  geom_col(width = 0.8) +
+  scale_fill_manual(values=rep(col_fil,5),name="Family")+
+  theme_classic() +
+  theme(        #panel.border = element_blank(),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        #axis.text.x=element_text(angle = -45, vjust = 0.8, hjust = 0),
+        strip.text.x = element_text(angle = 0,  face = "bold"),
+        legend.key.height = unit(0.5, 'cm'),
+        legend.text = element_text(face = "italic"),
+        plot.title = element_text(hjust = 0.5)
+        #legend.position = "none")
+  ) +
+  ylab("Relative abundance")+
+  xlab("Day") + 
+  ggtitle("Milk")
+
+barplot.milk.days.family
+```
+
+### Species
+
+```{r, message = F}
+
+#Collapse to Species level
+bac.phyl <- subset_samples(PSB.species, Sample.type == "Faecal sample")
+
+ps1 <- transform_sample_counts(bac.phyl, function(x) x / sum(x))
+
+ps1<- merge_samples(ps1, "Days")
+
+ps1 <- transform_sample_counts(ps1, function(x) x / sum(x))
+
+#Create melted dataframe
+df <- psmelt(ps1)
+
+#Select last non-empty taxonomic rank
+df[df==""] <- NA
+df$tax <- apply(df, 1, function(x) tail(na.omit(x), 1))
+
+#Arrange samples by mean abundance
+top <- df %>%
+  group_by(tax) %>%
+  dplyr::summarize(Mean = mean(Abundance)) %>%
+  arrange(-Mean)
+#Show top
+#top
+
+top10 <- top$tax[1:10]
+df0 <- df %>%
+  mutate(tax = forcats::fct_other(tax, c(as.matrix(top10))))
+
+df0 <- df0[order(df0$Sample, decreasing = TRUE), ]
+
+#Set order for samples
+#df0$Treatment <- factor(df0$Treatment, levels = c("Control", "Amp", "FOP", "LM", "LM+Amp", "LM+FOP"))
+
+#Set Hours as factor
+#$Hours <- factor(df0$Hours, levels = c("3h", "6h", "24h"))
+
+barplot.faecal.days.species <- ggplot(df0, aes(Sample, Abundance, fill = forcats::fct_reorder(tax, Abundance, .fun = mean))) +
+  geom_col(width = 0.8) +
+  scale_fill_manual(values=rep(col_fil,5),name="Species")+
+  theme_classic() +
+  theme(        #panel.border = element_blank(),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        #axis.text.x=element_text(angle = -45, vjust = 0.8, hjust = 0),
+        strip.text.x = element_text(angle = 0,  face = "bold"),
+        legend.key.height = unit(0.5, 'cm'),
+        legend.text = element_text(face = "italic"),
+        plot.title = element_text(hjust = 0.5)
+        #legend.position = "none")
+  ) +
+  ylab("Relative abundance")+
+  xlab("Day") +
+  ggtitle("Infant faeces")
+
+barplot.faecal.days.species
+
+sl(barplot.faecal.days.species,barplot.faecal.days.species,overwrite = T)
+```
+
+### BMI groups
+
+```{r, message = F}
+
+#Collapse to Species level
+bac.phyl <- subset_samples(PSB.genus, Sample.type == "Faecal sample")
+
+ps1 <- transform_sample_counts(bac.phyl, function(x) x / sum(x))
+
+ps1<- merge_samples(ps1, "BMI.group")
+
+ps1 <- transform_sample_counts(ps1, function(x) x / sum(x))
+
+#Create melted dataframe
+df <- psmelt(ps1)
+
+#Select last non-empty taxonomic rank
+df[df==""] <- NA
+df$tax <- apply(df, 1, function(x) tail(na.omit(x), 1))
+
+#Arrange samples by mean abundance
+top <- df %>%
+  group_by(tax) %>%
+  dplyr::summarize(Mean = mean(Abundance)) %>%
+  arrange(-Mean)
+#Show top
+#top
+
+top10 <- top$tax[1:10]
+df0 <- df %>%
+  mutate(tax = forcats::fct_other(tax, c(as.matrix(top10))))
+
+df0 <- df0[order(df0$Sample, decreasing = TRUE), ]
+
+#Set order for samples
+#df0$Treatment <- factor(df0$Treatment, levels = c("Control", "Amp", "FOP", "LM", "LM+Amp", "LM+FOP"))
+
+#Set Hours as factor
+#$Hours <- factor(df0$Hours, levels = c("3h", "6h", "24h"))
+
+barplot.faecal.days.species <- ggplot(df0, aes(Sample, Abundance, fill = forcats::fct_reorder(tax, Abundance, .fun = mean))) +
+  geom_col(width = 0.8) +
+  scale_fill_manual(values=rep(col_fil,5),name="Genus")+
+  theme_classic() +
+  theme(        #panel.border = element_blank(),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        #axis.text.x=element_text(angle = -45, vjust = 0.8, hjust = 0),
+        strip.text.x = element_text(angle = 0,  face = "bold"),
+        legend.key.height = unit(0.5, 'cm'),
+        legend.text = element_text(face = "italic"),
+        plot.title = element_text(hjust = 0.5)
+        #legend.position = "none")
+  ) +
+  ylab("Relative abundance")+
+  xlab("ppBMI") +
+  ggtitle("Infant faeces")
+
+barplot.faecal.days.species
+```
+
+
+
+# Rabuplot
+
+## Time vs Sample type
+
+### Facet wrapped -time
+
+```{r, message = F}
+#remotes::install_github("jstokholm/rabuplot")
+library(rabuplot)
+
+ps <- subset_samples(PSB, Days %in% c("3","30","60","90"))
+ps@sam_data$Days <- factor(ps@sam_data$Days , levels = c("3","30","60","90"))
+#ps@sam_data$Sample.type <- 
+
+sl(rabu.faec.milk.days,
+  rabuplot(
+  ps,
+  bar_chart_stacked =  TRUE,
+  predictor = "Days",
+  facet_wrap = "Sample.type",
+  p_adjust = TRUE,
+  N_taxa = 12,
+  ylabs = "Relative abundance",
+  main = "Days after birth",
+  colors = c(RColorBrewer::brewer.pal(12, "Paired"),"#D3D3D3")
+),
+overwrite=T)
+
+rabu.faec.milk.days
+```
+
+### Facet wrapped
+
+#### BMI
+
+```{r, message = F}
+#remotes::install_github("jstokholm/rabuplot")
+library(rabuplot)
+
+ps <- subset_samples(PSB, Days %in% c("3","30","60","90"))
+ps@sam_data$Days <- factor(ps@sam_data$Days , levels = c("3","30","60","90"))
+
+sl(rabu.faec.milk.bmi,rabuplot(
+  ps,
+  bar_chart_stacked =  TRUE,
+  Time = "Days",
+  predictor = "BMI.group",
+  facet_wrap = "Sample.type",
+  p_adjust = TRUE,
+  N_taxa = 12,
+  text_angle_x = 45,
+  ylabs = "Relative abundance",
+  main = "Pre-pregnancy BMI",
+  colors = c(RColorBrewer::brewer.pal(12, "Paired"),"#D3D3D3")
+),
+overwrite = T)
+
+rabu.faec.milk.bmi
+```
+
+```{r}
+ggarrange(rabu.faec.milk.bmi,rabu.faec.milk.days,nrow=2,common.legend = TRUE, legend = "right",heights = c(1.2,1))
+```
+
+### Plotted individually
+
+#### Faecal samples
+
+##### Days per BMI
+
+```{r, message = F}
+#remotes::install_github("jstokholm/rabuplot")
+library(rabuplot)
+
+ps <- subset_samples(PSB, Days %in% c("3","30","60","90") & Sample.type == "Faecal sample")
+#ps@sam_data$Days <- factor(ps@sam_data$Days , levels = rev(c("3","30","60","90")))
+
+rabu.faec.days.bmi <- rabuplot(
+  ps,
+  bar_chart_stacked =  TRUE,
+  predictor = "Days",
+  facet_wrap = "BMI.group",
+  p_adjust = TRUE,
+  N_taxa = 17
+  #colors = rep(col_fil,4)[1:17]
+)
+
+rabu.faec.days.bmi
+```
+
+##### BMI per days
+
+```{r, message = F}
+#remotes::install_github("jstokholm/rabuplot")
+library(rabuplot)
+
+ps <- subset_samples(PSB, Days %in% c("3","30","60","90") & Sample.type == "Faecal sample")
+#ps@sam_data$Days <- factor(ps@sam_data$Days , levels = rev(c("3","30","60","90")))
+
+rabu.faec.bmi.days <- rabuplot(
+  ps,
+  bar_chart_stacked =  TRUE,
+  predictor = "BMI.group",
+  facet_wrap = "Days",
+  p_adjust = TRUE,
+  N_taxa = 17
+  #colors = rep(col_fil,4)[1:17]
+)
+
+rabu.faec.bmi.days
+```
+
+```{r}
+ggarrange(rabu.faec.days.bmi,rabu.faec.bmi.days,nrow=2,common.legend = TRUE, legend = "right")
+```
+
+
+#### Violin plots
+
+```{r, message = F}
+#remotes::install_github("jstokholm/rabuplot")
+library(rabuplot)
+
+ps <- subset_samples(PSB, Days %in% c("3","30","60","90"))
+ps@sam_data$Days <- factor(ps@sam_data$Days , levels = rev(c("3","30","60","90")))
+
+ps.milk <- subset_samples(ps,Sample.type=="Milk")
+
+rabu.milk.days <- rabuplot(
+  ps.milk,
+  violin = TRUE,
+  By_median = FALSE,
+  predictor = "Days",
+  legend_title = "Days after birth",
+  italic_names = FALSE,
+  p_adjust = TRUE,
+  p_stars = TRUE,
+  text_angle_x = 45,
+  main = "Milk",
+  colors = rev(col_fil[1:4])) # to share order with beta div plot colors
+
+labels <- levels(factor(rabu.milk.days$data$variable))
+labels[labels != "Other genus"] <- paste0("*", labels[labels != "Other genus"], "*")
+
+rabu.milk.days <- rabu.milk.days + scale_x_discrete(labels = labels) + theme(axis.text.y = ggtext::element_markdown())
+  
+
+sl(rabu.milk.days,rabu.milk.days,overwrite = T)
+#rabu.milk.days
+
+ps.faec <- subset_samples(ps,Sample.type=="Faecal sample")
+
+rabu.faec.days <- rabuplot(
+  ps.faec,
+  violin = TRUE,
+  By_median = FALSE,
+  predictor = "Days",
+  legend_title = "Days after birth",
+  italic_names = FALSE,
+  p_adjust = TRUE,
+  p_stars = TRUE,
+  text_angle_x = 45,
+  main = "Infant faeces",
+  colors = rev(col_fil[2:4])) # to share order with beta div plot colors
+
+labels <- levels(factor(rabu.faec.days$data$variable))
+labels[labels != "Other genus"] <- paste0("*", labels[labels != "Other genus"], "*")
+
+rabu.faec.days <- rabu.faec.days + scale_x_discrete(labels = labels) + theme(axis.text.y = ggtext::element_markdown())
+  
+
+sl(rabu.faec.days,rabu.faec.days,overwrite = T)
+
+ggarrange(rabu.milk.days,rabu.faec.days,nrow=1,common.legend = TRUE,legend="right")
+```
+
+#### Bifidobacteria only
+
+```{r, message = F}
+#remotes::install_github("jstokholm/rabuplot")
+library(rabuplot)
+
+ps <- subset_samples(PSB.all, Days %in% c("3","30","60","90"))
+ps@sam_data$Days <- factor(ps@sam_data$Days , levels = rev(c("3","30","60","90")))
+
+ps.milk <- subset_samples(ps,Sample.type=="Milk")
+
+rabu.milk.days <- rabuplot(
+  ps.milk,
+  violin = TRUE,
+  predictor = "Days",
+   type = "Species",
+  select_taxa = "Bifidobacterium",
+  #facet_wrap = "Sample.type",
+  p_adjust = TRUE,
+  p_stars = TRUE,
+  text_angle_x = 45,
+  main = "Milk",
+  colors = rev(col_fil[1:4])) # to share order with beta div plot colors
+
+#rabu.milk.days
+
+ps.faec <- subset_samples(ps,Sample.type=="Faecal sample")
+
+rabu.faec.days <- rabuplot(
+  ps.faec,
+  violin = TRUE,
+  predictor = "Days",
+  type = "Species",
+  select_taxa = "Bifidobacterium",
+  #facet_wrap = "Sample.type",
+  p_adjust = TRUE,
+  p_stars = TRUE,
+  text_angle_x = 45,
+  main = "Infant faeces",
+  colors = rev(col_fil[2:4])) # to share order with beta div plot colors
+
+sl(rabu.milk.faec.days.bifido,ggarrange(rabu.milk.days,rabu.faec.days,nrow=1,common.legend = TRUE,legend="right"),overwrite = T)
+
+rabu.milk.faec.days.bifido
+```
+
+#### Boxplots
+
+```{r, message = F}
+#remotes::install_github("jstokholm/rabuplot")
+library(rabuplot)
+
+ps <- subset_samples(PSB.all, Days %in% c("3","30","60","90"))
+ps@sam_data$Days <- factor(ps@sam_data$Days , levels = rev(c("3","30","60","90")))
+
+ps.milk <- subset_samples(ps,Sample.type=="Milk")
+
+rabu.box.milk.days <- rabuplot(
+  ps.milk,
+  violin = FALSE,
+  predictor = "Days",
+  legend_title = "Days after birth",
+  italic_names = FALSE,
+  p_adjust = TRUE,
+  p_stars = TRUE,
+  text_angle_x = 45,
+  main = "Milk",
+  colors = rev(col_fil[1:4])) # to share order with beta div plot colors
+
+labels <- levels(factor(rabu.box.milk.days$data$variable))
+labels[labels != "Other genus"] <- paste0("*", labels[labels != "Other genus"], "*")
+
+rabu.box.milk.days <- rabu.box.milk.days + scale_x_discrete(labels = labels) + theme(axis.text.y = ggtext::element_markdown())
+
+sl(rabu.box.milk.days, rabu.box.milk.days, overwrite = TRUE)
+
+ps.faec <- subset_samples(ps,Sample.type=="Faecal sample")
+
+rabu.box.faec.days <- rabuplot(
+  ps.faec,
+  violin = FALSE,
+  predictor = "Days",
+  legend_title = "Days after birth",
+  italic_names = FALSE,
+  p_adjust = TRUE,
+  p_stars = TRUE,
+  text_angle_x = 45,
+  main = "Infant faeces",
+  colors = rev(col_fil[2:4])) # to share order with beta div plot colors
+
+labels <- levels(factor(rabu.box.faec.days$data$variable))
+labels[labels != "Other genus"] <- paste0("*", labels[labels != "Other genus"], "*")
+
+rabu.box.faec.days <- rabu.box.faec.days + scale_x_discrete(labels = labels) + theme(axis.text.y = ggtext::element_markdown())
+
+sl(rabu.box.faec.days, rabu.box.faec.days, overwrite = TRUE)
+
+ggarrange(rabu.box.milk.days,rabu.box.faec.days,nrow=1,common.legend = TRUE)
+```
+
+## BMI by sample type
+
+### Milk
+
+```{r, message = F}
+#remotes::install_github("jstokholm/rabuplot")
+library(rabuplot)
+
+ps <- subset_samples(PSB, Days %in% c("3","30","60","90") & Sample.type=="Milk")
+ps@sam_data$BMI.group <- factor(ps@sam_data$BMI.group , levels = rev(levels(ps@sam_data$BMI.group)))
+
+rabu <- rabuplot(
+  ps,
+  violin = TRUE,
+  By_median = FALSE,
+  predictor = "BMI.group",
+  legend_title = "Pre-pregnancy BMI",
+  main = "Milk bacteria",
+  italic_names = FALSE,
+  text_angle_x = 45,
+  p_stars = TRUE,
+  colors = col_fil[3:1])
+
+labels <- levels(factor(rabu$data$variable))
+labels[labels != "Other genus"] <- paste0("*", labels[labels != "Other genus"], "*")
+
+rabu <- rabu + scale_x_discrete(labels = labels) + theme(axis.text.y = ggtext::element_markdown())
+
+sl(rabu.milk.bmi,rabu,overwrite = T)
+
+rabu.milk.bmi
+```
+
+#### Secretor stratified
+
+```{r, message = F}
+#remotes::install_github("jstokholm/rabuplot")
+library(rabuplot)
+
+ps <- subset_samples(PSB, Days %in% c("3","30","60","90") & Sample.type=="Milk")
+ps@sam_data$BMI.group <- factor(ps@sam_data$BMI.group , levels = rev(levels(ps@sam_data$BMI.group)))
+
+rabu <- rabuplot(
+  ps,
+  violin = TRUE,
+  By_median = FALSE,
+  predictor = "BMI.group",
+  legend_title = "Pre-pregnancy BMI",
+  main = "Milk bacteria",
+  facet_wrap = "Secretor",
+  italic_names = FALSE,
+  text_angle_x = 45,
+  p_stars = TRUE,
+  colors = col_fil[3:1])
+
+labels <- levels(factor(rabu$data$variable))
+labels[labels != "Other genus"] <- paste0("*", labels[labels != "Other genus"], "*")
+
+rabu <- rabu + scale_x_discrete(labels = labels) + theme(axis.text.y = ggtext::element_markdown())
+
+sl(rabu.milk.bmi.sec,rabu,overwrite = T)
+
+rabu.milk.bmi.sec
+```
+
+### Faecal samples
+
+```{r, message = F}
+#remotes::install_github("jstokholm/rabuplot")
+library(rabuplot)
+
+ps <- subset_samples(PSB, Days %in% c("3","30","60","90") & Sample.type=="Faecal sample")
+ps@sam_data$BMI.group <- factor(ps@sam_data$BMI.group , levels = rev(levels(ps@sam_data$BMI.group)))
+
+rabu <- rabuplot(
+  ps,
+  violin = TRUE,
+  By_median = FALSE,
+  predictor = "BMI.group",
+  legend_title = "Pre-pregnancy BMI",
+  main = "Infant faecal bacteria",
+  italic_names = FALSE,
+  text_angle_x = 45,
+  p_stars = TRUE,
+  colors = col_fil[3:1])
+
+labels <- levels(factor(rabu$data$variable))
+labels[labels != "Other genus"] <- paste0("*", labels[labels != "Other genus"], "*")
+
+rabu <- rabu + scale_x_discrete(labels = labels) + theme(axis.text.y = ggtext::element_markdown())
+
+sl(rabu.faec.bmi,rabu,overwrite = T)
+
+rabu.faec.bmi
+```
+
+#### Secretor stratified
+
+```{r, message = F}
+#remotes::install_github("jstokholm/rabuplot")
+library(rabuplot)
+
+ps <- subset_samples(PSB, Days %in% c("3","30","60","90") & Sample.type=="Faecal sample")
+ps@sam_data$BMI.group <- factor(ps@sam_data$BMI.group , levels = rev(levels(ps@sam_data$BMI.group)))
+
+rabu <- rabuplot(
+  ps,
+  violin = TRUE,
+  By_median = FALSE,
+  predictor = "BMI.group",
+  legend_title = "Pre-pregnancy BMI",
+  main = "Infant faecal bacteria",
+  facet_wrap = "Secretor",
+  italic_names = FALSE,
+  text_angle_x = 45,
+  p_stars = TRUE,
+  colors = col_fil[3:1])
+
+labels <- levels(factor(rabu$data$variable))
+labels[labels != "Other genus"] <- paste0("*", labels[labels != "Other genus"], "*")
+
+rabu <- rabu + scale_x_discrete(labels = labels) + theme(axis.text.y = ggtext::element_markdown())
+
+sl(rabu.faec.bmi.sec,rabu,overwrite = T)
+
+rabu.faec.bmi.sec
+```
+
+## Milk samples
+
+### BMI over time
+
+```{r, message = F}
+#remotes::install_github("jstokholm/rabuplot")
+library(rabuplot)
+
+ps <- subset_samples(PSB, Days %in% c("3","30","60","90") & Sample.type == "Milk")
+ps@sam_data$BMI.group <- factor(ps@sam_data$BMI.group , levels = rev(levels(ps@sam_data$BMI.group)))
+
+ps@sam_data$RCID[duplicated(ps@sam_data$RCID)]
+
+rabuplot(
+  ps,
+  violin = TRUE,
+  predictor = "BMI.group",
+  Time = "Days",
+  facet_wrap = "Days",
+  p_adjust = TRUE,
+  colors = col_fil[1:3])
+```
+
+### Time by BMI
+
+```{r, message = F}
+#remotes::install_github("jstokholm/rabuplot")
+library(rabuplot)
+
+ps <- subset_samples(PSB, Days %in% c("3","30","60","90") & Sample.type == "Milk")
+ps@sam_data$Days <- factor(ps@sam_data$Days , levels = rev(c("3","30","60","90")))
+
+
+rabuplot(
+  ps,
+  violin = TRUE,
+  predictor = "Days",
+  #Time = "Days",
+  facet_wrap = "BMI.group",
+  p_adjust = TRUE,
+  colors = col_fil[1:4])
+```
+
+## Faecal samples
+
+### BMI over time
+
+```{r, message = F}
+#remotes::install_github("jstokholm/rabuplot")
+library(rabuplot)
+
+ps <- subset_samples(PSB, Days %in% c("3","30","60","90") & Sample.type == "Faecal sample")
+#ps@sam_data$Days <- factor(ps@sam_data$Days , levels = rev(c("3","30","60","90")))
+
+ps@sam_data$RCID[duplicated(ps@sam_data$RCID)]
+
+rabuplot(
+  ps,
+  violin = TRUE,
+  predictor = "BMI.group",
+  Time = "Days",
+  facet_wrap = "Days",
+  p_adjust = FALSE,
+  p_stars=TRUE,
+  colors = col_fil[1:3])
+```
+
+#### Species
+
+```{r, message = F}
+#remotes::install_github("jstokholm/rabuplot")
+library(rabuplot)
+
+ps <- subset_samples(PSB, Days %in% c("3","30","60","90") & Sample.type == "Faecal sample")
+#ps@sam_data$Days <- factor(ps@sam_data$Days , levels = rev(c("3","30","60","90")))
+
+ps@sam_data$RCID[duplicated(ps@sam_data$RCID)]
+
+rabuplot(
+  ps,
+  violin = TRUE,
+  type = "species",
+  predictor = "BMI.group",
+  Time = "Days",
+  facet_wrap = "Days",
+  p_adjust = FALSE,
+  colors = col_fil[1:3])
+```
+
+
+### Time per BMI
+
+```{r, message = F}
+#remotes::install_github("jstokholm/rabuplot")
+library(rabuplot)
+
+ps <- subset_samples(PSB, Days %in% c("3","30","60","90") & Sample.type == "Faecal sample")
+#ps@sam_data$Days <- factor(ps@sam_data$Days , levels = rev(c("3","30","60","90")))
+
+ps@sam_data$RCID[duplicated(ps@sam_data$RCID)]
+
+rabuplot(
+  ps,
+  violin = TRUE,
+  predictor = "BMI.group",
+  facet_wrap = "Days",
+  p_stars = TRUE,
+  #p_adjust = TRUE,
+  colors = col_fil[1:3])
+```
+
+
+
+
+# Alpha diversity
+
+## Milk
+
+### Days
+
+```{r}
+
+ps <- ps <- subset_samples(PSB, Days %in% c("3","30","60","90") & Sample.type == "Milk")
+ps@sam_data$Days <- factor(ps@sam_data$Days , levels = c("3","30","60","90"))
+
+#Normalize to mean read count
+total = median(sample_sums(ps))
+standf = function(x, t=total) round(t * (x / sum(x)))
+ps.rel = transform_sample_counts(ps, standf)
+
+#Set desired alpha diversity metrics
+
+alpha_met <- c("Observed", "Shannon", "InvSimpson")
+
+###########Boxplots
+
+##Time
+
+variable <- c("Days")
+
+alpha.metrics.milk.days <- plot_richness(ps.rel, measures=alpha_met , x=variable, color=variable) + 
+  geom_boxplot(alpha=0.1) +
+  theme_classic() +
+  scale_color_manual(values=col_fil) +
+  theme(strip.background = element_rect(colour = "white", fill = "white"),
+        axis.text.x=element_text(angle = 45, hjust = 1),
+        strip.text.x = element_text(size = 8, angle = 0),
+        legend.text = element_text(size = 8)
+  ) +
+  labs(x="Days",
+       y="Alpha diversity") + 
+  ggtitle("Milk") +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15)))
+
+comparisons <- levels(alpha.metrics.milk.days$data[[variable]])
+
+combinations <- combn(levels(alpha.metrics.milk.days$data[[variable]]), 2, simplify = FALSE) %>%
+  lapply(., function(x) c(x[1], x[2]))
+
+ggboxplot(alpha.metrics.milk.days$data,x=variable,y="value",
+          color="variable",
+          facet.by = "variable",
+          scales="free") +
+  stat_compare_means(comparisons = combinations, label="p.format",method="wilcox.test",p.adjust.methods = "fdr") +
+  theme_classic() +
+  scale_color_manual(values=col_fil) 
+
+sl(alpha.metrics.milk.days,alpha.metrics.milk.days,overwrite = T)
+
+alpha.metrics.milk.days
+```
+
+```{r}
+##Richness - all time points
+
+richness = estimate_richness(ps.rel, measures = alpha_met)
+
+#Time
+
+rich <- cbind(richness, variable = sample_data(ps.rel)$Days)
+
+TukeyHSD(aov(Shannon ~ variable, rich))
+
+TukeyHSD(aov(Observed ~ variable, rich))
+```
+
+### BMI
+
+```{r}
+
+ps <- subset_samples(PSB, Sample.type == "Milk")
+#ps@sam_data$BMI <- factor(ps@sam_data$BMI , levels = c("3","30","60","90"))
+
+#Normalize to mean read count
+total = median(sample_sums(ps))
+standf = function(x, t=total) round(t * (x / sum(x)))
+ps.rel = transform_sample_counts(ps, standf)
+
+#Set desired alpha diversity metrics
+
+alpha_met <- c("Observed", "Shannon", "InvSimpson")
+
+###########Boxplots
+
+##Time
+
+variable <- c("BMI.group")
+
+alpha.metrics.milk.bmi <- plot_richness(ps.rel, measures=alpha_met , x=variable, color=variable) + 
+  geom_boxplot(alpha=0.1) +
+  theme_classic() +
+  scale_color_manual(values=col_fil) +
+  theme(strip.background = element_rect(colour = "white", fill = "white"),
+        axis.text.x=element_text(angle = 45, hjust = 1),
+        strip.text.x = element_text(size = 8, angle = 0),
+        legend.text = element_text(size = 8)
+  ) +
+  labs(x="BMI",
+       y="Alpha diversity") + 
+  ggtitle("Milk") +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15)))
+
+comparisons <- levels(alpha.metrics.milk.bmi$data[[variable]])
+
+combinations <- combn(levels(alpha.metrics.milk.bmi$data[[variable]]), 2, simplify = FALSE) %>%
+  lapply(., function(x) c(x[1], x[2]))
+
+
+ggboxplot(alpha.metrics.milk.bmi$data,x=variable,y="value",
+          color="variable",
+          facet.by = "variable",
+          scales="free") +
+  stat_compare_means(comparisons = combinations, label="p.format",method="wilcox.test",p.adjust.methods = "fdr") +
+  theme_classic() +
+  scale_color_manual(values=col_fil) 
+
+sl(alpha.metrics.milk.bmi,alpha.metrics.milk.bmi,overwrite = T)
+
+alpha.metrics.milk.bmi
+```
+
+```{r}
+##Richness - all time points
+
+richness = estimate_richness(ps.rel, measures = alpha_met)
+
+#Time
+
+rich <- cbind(richness, variable = sample_data(ps.rel)$BMI.group)
+
+TukeyHSD(aov(Shannon ~ variable, rich))
+
+TukeyHSD(aov(Observed ~ variable, rich))
+```
+
+#### Only shannon
+
+```{r}
+
+ps <- subset_samples(PSB, Sample.type == "Milk")
+#ps@sam_data$BMI <- factor(ps@sam_data$BMI , levels = c("3","30","60","90"))
+
+#Normalize to mean read count
+total = median(sample_sums(ps))
+standf = function(x, t=total) round(t * (x / sum(x)))
+ps.rel = transform_sample_counts(ps, standf)
+
+#Set desired alpha diversity metrics
+
+alpha_met <- c("Shannon")
+
+###########Boxplots
+
+##Time
+
+variable <- c("BMI.group")
+
+alpha.metrics.milk.bmi.shannon <- plot_richness(ps.rel, measures=alpha_met , x=variable, color=variable) + 
+  geom_boxplot(alpha=0.1) +
+  theme_classic() +
+  scale_color_manual(values=col_fil) +
+  theme(strip.background = element_rect(colour = "white", fill = "white"),
+        axis.text.x=element_text(angle = 45, hjust = 1),
+  ) +
+  ggtitle("Milk") +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15)))
+
+
+combinations <- combn(levels(alpha.metrics.milk.bmi$data[[variable]]), 2, simplify = FALSE) %>%
+  lapply(., function(x) c(x[1], x[2]))
+
+sl(alpha.shannon.milk.bmi,
+   ggboxplot(alpha.metrics.milk.bmi.shannon$data,x=variable,y="value",
+          color=variable,
+          scales="free") +
+  stat_compare_means(comparisons = combinations, label="p.signif",method="wilcox.test",p.adjust.methods = "fdr") +
+  theme(strip.background = element_rect(colour = "white", fill = "white"),
+        axis.text.x=element_text(angle = 45, hjust = 1)) +
+  labs(main="Milk",x="",y="Shannon diversity") +
+  scale_color_manual(values=col_fil),
+  overwrite = T)
+
+alpha.shannon.milk.bmi
+```
+
+### Alfa diversity vs maternal age
+
+```{r}
+#Check whether alfa div and sample dataframes match
+length(intersect(rownames(rich),rownames(ps@sam_data)))==nrow(rich)
+
+df <- dplyr::select(rich,Shannon) %>%
+  cbind(.,'Maternal age'=ps@sam_data$Maternal.age) %>%
+  cbind(.,'BMI group'=ps@sam_data$BMI.group)
+
+ggplot(df,aes(x=`Maternal age`,y=Shannon,color=`BMI group`)) + 
+  geom_point() +
+  geom_smooth(method = "lm") +
+  stat_cor(method = "pearson") 
+```
+
+## Infant faeces
+
+### Days
+
+```{r}
+
+ps <- ps <- subset_samples(PSB, Days %in% c("30","60","90") & Sample.type == "Faecal sample")
+ps@sam_data$Days <- factor(ps@sam_data$Days , levels = c("30","60","90"))
+
+#Normalize to mean read count
+total = median(sample_sums(ps))
+standf = function(x, t=total) round(t * (x / sum(x)))
+ps.rel = transform_sample_counts(ps, standf)
+
+#Set desired alpha diversity metrics
+
+alpha_met <- c("Observed", "Shannon", "InvSimpson")
+
+###########Boxplots
+
+##Time
+
+variable <- c("Days")
+
+alpha.metrics.faec.days <- plot_richness(ps.rel, measures=alpha_met , x=variable, color=variable) + 
+  geom_boxplot(alpha=0.1) +
+  theme_classic() +
+  scale_color_manual(values=col_fil) +
+  theme(strip.background = element_rect(colour = "white", fill = "white"),
+  ) +
+  labs(x="Days",
+       y="Alpha diversity") + 
+  ggtitle("Infant faeces") +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15)))
+
+combinations <- combn(levels(alpha.metrics.faec.days$data[[variable]]), 2, simplify = FALSE) %>%
+  lapply(., function(x) c(x[1], x[2]))
+
+ggboxplot(alpha.metrics.faec.days$data,x=variable,y="value",
+          color="variable",
+          facet.by = "variable",
+          scales="free") +
+  stat_compare_means(comparisons = combinations, label="p.format",method="wilcox.test",p.adjust.methods = "fdr") +
+  theme_classic() +
+  scale_color_manual(values=col_fil) 
+
+sl(alpha.metrics.faec.days,alpha.metrics.faec.days,overwrite = T)
+
+alpha.metrics.faec.days
+```
+
+```{r}
+##Richness - all time points
+
+richness = estimate_richness(ps.rel, measures = alpha_met)
+
+#Time
+
+rich <- cbind(richness, variable = sample_data(ps.rel)$Days)
+
+TukeyHSD(aov(Shannon ~ variable, rich))
+
+TukeyHSD(aov(Observed ~ variable, rich))
+```
+
+#### Only shannon
+
+```{r}
+
+ps <- subset_samples(PSB, Sample.type == "Faecal sample")
+#ps@sam_data$BMI <- factor(ps@sam_data$BMI , levels = c("3","30","60","90"))
+
+#Normalize to mean read count
+total = median(sample_sums(ps))
+standf = function(x, t=total) round(t * (x / sum(x)))
+ps.rel = transform_sample_counts(ps, standf)
+
+#Set desired alpha diversity metrics
+
+alpha_met <- c("Shannon")
+
+###########Boxplots
+
+##Time
+
+variable <- c("Days")
+
+alpha.metrics.faec.days.shannon <- plot_richness(ps.rel, measures=alpha_met , x=variable, color=variable) + 
+  geom_boxplot(alpha=0.1) +
+  theme_classic() +
+  scale_color_manual(values=col_fil) +
+  theme(strip.background = element_rect(colour = "white", fill = "white"),
+        axis.text.x=element_text(angle = 45, hjust = 1),
+  ) +
+  ggtitle("Infant faeces") +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15)))
+
+
+combinations <- combn(levels(alpha.metrics.faec.days$data[[variable]]), 2, simplify = FALSE) %>%
+  lapply(., function(x) c(x[1], x[2]))
+
+sl(alpha.shannon.faec.days,
+   ggboxplot(alpha.metrics.faec.days.shannon$data,x=variable,y="value",
+          color=variable,
+          scales="free") +
+  stat_compare_means(comparisons = combinations, label="p.signif",method="wilcox.test",p.adjust.methods = "fdr") +
+  theme(strip.background = element_rect(colour = "white", fill = "white"),
+        axis.text.x=element_text(angle = 45, hjust = 1)) +
+  labs(main="Infant faeces",x="",y="Shannon diversity") +
+  #theme_classic() +
+  scale_color_manual(values=col_fil),
+  overwrite = T)
+
+alpha.shannon.faec.days
+```
+
+### BMI
+
+```{r}
+
+ps <- subset_samples(PSB, Sample.type == "Faecal sample")
+#ps@sam_data$BMI <- factor(ps@sam_data$BMI , levels = c("3","30","60","90"))
+
+#Normalize to mean read count
+total = median(sample_sums(ps))
+standf = function(x, t=total) round(t * (x / sum(x)))
+ps.rel = transform_sample_counts(ps, standf)
+
+#Set desired alpha diversity metrics
+
+alpha_met <- c("Observed", "Shannon", "InvSimpson")
+
+###########Boxplots
+
+##Time
+
+variable <- c("BMI.group")
+
+alpha.metrics.faec.bmi <- plot_richness(ps.rel, measures=alpha_met , x=variable, color=variable) + 
+  geom_boxplot(alpha=0.1) +
+  theme_classic() +
+  scale_color_manual(values=col_fil) +
+  theme(strip.background = element_rect(colour = "white", fill = "white")
+  ) +
+  labs(x="BMI",
+       y="Alpha diversity") + 
+  ggtitle("Infant faeces") +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15)))
+
+
+combinations <- combn(levels(alpha.metrics.faec.bmi$data[[variable]]), 2, simplify = FALSE) %>%
+  lapply(., function(x) c(x[1], x[2]))
+
+ggboxplot(alpha.metrics.faec.bmi$data,x=variable,y="value",
+          color="variable",
+          facet.by = "variable",
+          scales="free") +
+  stat_compare_means(comparisons = combinations, label="p.format",method="wilcox.test",p.adjust.methods = "fdr") +
+  theme_classic() +
+  scale_color_manual(values=col_fil) 
+
+alpha.metrics.faec.bmi
+```
+
+```{r}
+##Richness - all time points
+
+richness = estimate_richness(ps.rel, measures = alpha_met)
+
+#Time
+
+rich <- cbind(richness, variable = sample_data(ps.rel)$BMI.group)
+
+TukeyHSD(aov(Shannon ~ variable, rich))
+
+TukeyHSD(aov(Observed ~ variable, rich))
+```
+
+#### Only shannon
+
+```{r}
+
+ps <- subset_samples(PSB, Sample.type == "Faecal sample")
+#ps@sam_data$BMI <- factor(ps@sam_data$BMI , levels = c("3","30","60","90"))
+
+#Normalize to mean read count
+total = median(sample_sums(ps))
+standf = function(x, t=total) round(t * (x / sum(x)))
+ps.rel = transform_sample_counts(ps, standf)
+
+#Set desired alpha diversity metrics
+
+alpha_met <- c("Shannon")
+
+###########Boxplots
+
+##Time
+
+variable <- c("BMI.group")
+
+alpha.metrics.faec.bmi.shannon <- plot_richness(ps.rel, measures=alpha_met , x=variable, color=variable) + 
+  geom_boxplot(alpha=0.1) +
+  theme_classic() +
+  scale_color_manual(values=col_fil) +
+  theme(strip.background = element_rect(colour = "white", fill = "white"),
+        axis.text.x=element_text(angle = 45, hjust = 1),
+  ) +
+  ggtitle("Infant faeces") +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15)))
+
+
+combinations <- combn(levels(alpha.metrics.faec.bmi$data[[variable]]), 2, simplify = FALSE) %>%
+  lapply(., function(x) c(x[1], x[2]))
+
+sl(alpha.shannon.faec.bmi,
+   ggboxplot(alpha.metrics.faec.bmi.shannon$data,x=variable,y="value",
+          color=variable,
+          scales="free") +
+  stat_compare_means(comparisons = combinations, label="p.signif",method="wilcox.test",p.adjust.methods = "fdr") +
+  theme(strip.background = element_rect(colour = "white", fill = "white"),
+        axis.text.x=element_text(angle = 45, hjust = 1)) +
+  labs(main="Infant faeces",x="",y="Shannon diversity") +
+  #theme_classic() +
+  scale_color_manual(values=col_fil),
+  overwrite = T)
+
+alpha.shannon.faec.bmi
+```
+
+### Alfa diversity vs maternal age
+
+```{r}
+#Check whether alfa div and sample dataframes match
+length(intersect(rownames(rich),rownames(ps@sam_data)))==nrow(rich)
+
+df <- dplyr::select(rich,Shannon) %>%
+  cbind(.,'Maternal age'=ps@sam_data$Maternal.age) %>%
+  cbind(.,'BMI group'=ps@sam_data$BMI.group)
+
+ggplot(df,aes(x=`Maternal age`,y=Shannon,color=`BMI group`)) + 
+  geom_point() +
+  geom_smooth(method = "lm") +
+  stat_cor(method = "pearson") 
+```
+
+# Beta diversity
+
+## Sample types
+
+### Bray curtis
+
+```{r, message = F}
+ps <- PSB.CSS
+
+#Do PCoA ordination based on Bray-curtis distance
+GP.ord <- ordinate(ps, "PCoA", "bray")
+
+#####################Run + Batch
+
+#PSB.CSS@sam_data$Run <- as.factor(PSB.CSS@sam_data$Run)
+
+#PSB.CSS.all@sam_data$Batch <- as.factor(ps@sam_data$Batch)
+
+beta.type = plot_ordination(ps, GP.ord, color="Sample.type") + 
+  stat_ellipse(geom = "polygon", level = 0.95, fill = NA, size = 1) +
+  #scale_fill_manual(values= col_fil) +
+  #scale_color_manual(values = col_fil) +
+  theme_classic() + 
+  theme(text = element_text(size = 12, family = 'serif'),
+        axis.line=element_line(size=1),
+        axis.text=element_text(size = 12, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        #axis.text.x=element_text(angle = 45, hjust = 1),
+        strip.text.x = element_text(size = 12, angle = 0),
+        legend.text = element_text(size = 12)
+        #legend.position = "none"
+  ) #+facet_wrap(~Sample.type + Batch,scales="free")
+
+beta.type
+```
+
+### Weighted unifrac
+
+```{r, message = F}
+ps <- PSB.CSS
+
+#Do PCoA ordination based on Bray-curtis distance
+sl(GP.ord.wunifrac,ordinate(ps, "PCoA", "wunifrac"))
+
+#####################Run + Batch
+
+#PSB.CSS@sam_data$Run <- as.factor(PSB.CSS@sam_data$Run)
+
+#PSB.CSS.all@sam_data$Batch <- as.factor(ps@sam_data$Batch)
+
+beta.type = plot_ordination(ps, GP.ord.wunifrac, color="Sample.type") + 
+  stat_ellipse(geom = "polygon", level = 0.95, fill = NA, size = 1) +
+  #scale_fill_manual(values= col_fil) +
+  #scale_color_manual(values = col_fil) +
+  theme_classic() + 
+  theme(text = element_text(size = 12, family = 'serif'),
+        axis.line=element_line(size=1),
+        axis.text=element_text(size = 12, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        #axis.text.x=element_text(angle = 45, hjust = 1),
+        strip.text.x = element_text(size = 12, angle = 0),
+        legend.text = element_text(size = 12)
+        #legend.position = "none"
+  ) #+facet_wrap(~Sample.type + Batch,scales="free")
+
+beta.type
+```
+
+### NMDS
+
+```{r, message = F}
+load("0.3_deduplicated_and_decontaminated.RData")
+
+ps <- PSB
+
+#Do PCoA ordination based on Bray-curtis distance
+#GP.ord <- ordinate(ps, "PCoA", "bray")
+sl(GP.ord.nmds,ordinate(ps, "NMDS"))
+
+#####################Run + Batch
+
+#PSB.CSS@sam_data$Run <- as.factor(PSB.CSS@sam_data$Run)
+
+#PSB.CSS.all@sam_data$Batch <- as.factor(ps@sam_data$Batch)
+
+beta.type = plot_ordination(ps, GP.ord.nmds, color="Sample.type") + 
+  stat_ellipse(geom = "polygon", level = 0.95, fill = NA, size = 1) +
+  #scale_fill_manual(values= col_fil) +
+  #scale_color_manual(values = col_fil) +
+  theme_classic() + 
+  theme(text = element_text(size = 12, family = 'serif'),
+        axis.line=element_line(size=1),
+        axis.text=element_text(size = 12, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        #axis.text.x=element_text(angle = 45, hjust = 1),
+        strip.text.x = element_text(size = 12, angle = 0),
+        legend.text = element_text(size = 12)
+        #legend.position = "none"
+  ) #+facet_wrap(~Sample.type + Batch,scales="free")
+
+beta.type
+```
+
+## Milk
+
+```{r}
+ps <- subset_samples(PSB.CSS, Sample.type == "Milk" & Days %in% c("3","30","60","90"))
+ps@sam_data$Days <- factor(ps@sam_data$Days, levels = c("3","30","60","90"))
+
+#Do PCoA ordination based on Bray-curtis distance
+GP.ord <- ordinate(ps, "PCoA", "bray")
+```
+
+
+### Days
+
+```{r, message = F}
+
+beta.milk.days = plot_ordination(ps, GP.ord, color="Days") + 
+  stat_ellipse(geom = "polygon", level = 0.95, fill = NA, size = 1) +
+  #scale_fill_manual(values= col_fil) +
+  scale_color_manual(values = col_fil,name="Days after birth") +
+  theme(strip.background = element_rect(colour = "white", fill = "white"),
+        plot.title = element_text(hjust = 0.5)
+        #legend.title = element_text("Days after birth")
+  ) +
+  ggtitle("Milk") +
+  ggplot2::annotate("text", x = 0, y = 0.47, label = "All: p = 0.0002          Pairwise: p < 0.02 ")
+
+sl(beta.milk.days,beta.milk.days,overwrite=T)
+
+beta.milk.days
+```
+
+Permanova statistics
+
+```{r, eval = T, include = T, echo = F, message = F}
+PSB.CSS.no.na <- subset_samples(ps, !is.na(Days))
+
+D_BC <- phyloseq::distance(PSB.CSS.no.na, "bray")
+
+adonis <- adonis2(D_BC ~ Days, data = data.frame(sample_data(PSB.CSS.no.na)),permutations = 9999)
+adonis
+```
+
+Pairwise PERMANOVA
+
+```{r}
+RVAideMemoire::pairwise.perm.manova(D_BC ,data.frame(sample_data(PSB.CSS.no.na))$Days,nperm=9999)
+```
+
+### BMI
+
+```{r, message = F}
+beta.milk.BMI = plot_ordination(ps, GP.ord, color="BMI.group") + 
+  stat_ellipse(geom = "polygon", level = 0.95, fill = NA, size = 1) +
+  #scale_fill_manual(values= col_fil) +
+  scale_color_manual(values = col_fil,name="Pre-pregnancy BMI") +
+  theme(strip.background = element_rect(colour = "white", fill = "white"),
+        plot.title = element_text(hjust = 0.5)
+        #legend.title = element_text("BMI after birth")
+  ) +
+  ggtitle("Milk") +
+  ggplot2::annotate("text", x = 0, y = 0.47, label = "NW-OW:***NW-OB:***OW-OB:NS")
+
+sl(beta.milk.BMI,beta.milk.BMI,overwrite=T)
+
+beta.milk.BMI
+```
+
+Permanova statistics
+
+```{r, eval = T, include = T, echo = F, message = F}
+PSB.CSS.no.na <- subset_samples(ps, !is.na(BMI.group))
+
+D_BC <- phyloseq::distance(PSB.CSS.no.na, "bray")
+
+adonis <- adonis2(D_BC ~ BMI.group, data = data.frame(sample_data(PSB.CSS.no.na)),permutations = 9999)
+adonis
+```
+
+Pairwise PERMANOVA
+
+```{r}
+RVAideMemoire::pairwise.perm.manova(D_BC ,data.frame(sample_data(PSB.CSS.no.na))$BMI.group,nperm=9999)
+```
+
+## Infant faeces
+
+```{r}
+ps <- subset_samples(PSB.CSS, Sample.type == "Faecal sample" & Days %in% c("3","30","60","90"))
+ps@sam_data$Days <- factor(ps@sam_data$Days, levels = c("3","30","60","90"))
+
+#Do PCoA ordination based on Bray-curtis distance
+GP.ord <- ordinate(ps, "PCoA", "bray")
+```
+
+
+### Days
+
+```{r, message = F}
+
+beta.faec.days = plot_ordination(ps, GP.ord, color="Days") + 
+  stat_ellipse(geom = "polygon", level = 0.95, fill = NA, size = 1) +
+  #scale_fill_manual(values= col_fil) +
+  scale_color_manual(values = col_fil[2:4],name="Days after birth") +
+  theme(strip.background = element_rect(colour = "white", fill = "white"),
+        plot.title = element_text(hjust = 0.5)
+        #legend.title = element_text("Days after birth")
+  ) +
+  ggtitle("Infant faeces") +
+  ggplot2::annotate("text", x = 0, y = 0.40, label = "All: p = 0.0003      Pairwise: p < 0.008")
+
+sl(beta.faec.days,beta.faec.days,overwrite=T)
+
+beta.faec.days
+```
+
+Permanova statistics
+
+```{r, eval = T, include = T, echo = F, message = F}
+PSB.CSS.no.na <- subset_samples(ps, !is.na(Days))
+
+D_BC <- phyloseq::distance(PSB.CSS.no.na, "bray")
+
+adonis <- adonis2(D_BC ~ Day, data = data.frame(sample_data(PSB.CSS.no.na)),permutations = 9999)
+adonis
+```
+
+Pairwise PERMANOVA
+
+```{r}
+RVAideMemoire::pairwise.perm.manova(D_BC ,data.frame(sample_data(PSB.CSS.no.na))$Days,nperm=9999)
+```
+
+#### Bifidobacteria days
+
+```{r}
+ps <- subset_samples(PSB.CSS, Sample.type == "Faecal sample" & Days %in% c("3","30","60","90"))
+ps@sam_data$Days <- factor(ps@sam_data$Days, levels = c("3","30","60","90"))
+ps <- subset_taxa(ps,Genus=="Bifidobacterium")
+
+#Do PCoA ordination based on Bray-curtis distance
+GP.ord <- ordinate(ps, "PCoA", "bray")
+
+
+beta.faec.bifi.days = plot_ordination(ps, GP.ord, color="Days") + 
+  stat_ellipse(geom = "polygon", level = 0.95, fill = NA, size = 1) +
+  #scale_fill_manual(values= col_fil) +
+  scale_color_manual(values = col_fil,name="Days after birth") +
+  theme(strip.background = element_rect(colour = "white", fill = "white"),
+        plot.title = element_text(hjust = 0.5)
+        #legend.title = element_text("Days after birth")
+  ) +
+  ggtitle("Infant faeces") +
+  ggplot2::annotate("text", x = -0.35, y = 0.40, label = "p = 0.0008")
+
+sl(beta.faec.bifi.days,beta.faec.days,overwrite=T)
+
+beta.faec.bifi.days
+```
+
+Permanova statistics
+
+```{r, eval = T, include = T, echo = F, message = F}
+
+D_BC <- phyloseq::distance(ps, "bray")
+
+adonis <- adonis2(D_BC ~ Day, data = data.frame(sample_data(ps)),permutations = 9999)
+adonis
+```
+
+Pairwise PERMANOVA
+
+```{r}
+RVAideMemoire::pairwise.perm.manova(D_BC ,data.frame(sample_data(ps))$Day,nperm=9999)
+```
+
+### BMI
+
+```{r, message = F}
+beta.faec.BMI = plot_ordination(ps, GP.ord, color="BMI.group") + 
+  stat_ellipse(geom = "polygon", level = 0.95, fill = NA, size = 1) +
+  #scale_fill_manual(values= col_fil) +
+  scale_color_manual(values = col_fil,name="Pre-pregnancy BMI") +
+  theme(strip.background = element_rect(colour = "white", fill = "white"),
+        plot.title = element_text(hjust = 0.5)
+        #legend.title = element_text("BMI after birth")
+  ) +
+  ggtitle("Infant faeces") +
+  ggplot2::annotate("text", x = 0.05, y = 0.50, label = "NW-OW:***NW-OB:***OW-OB:NS")
+
+sl(beta.faec.BMI,beta.faec.BMI,overwrite=T)
+
+beta.faec.BMI
+```
+
+Permanova statistics
+
+```{r, eval = T, include = T, echo = F, message = F}
+PSB.CSS.no.na <- subset_samples(ps, !is.na(BMI.group))
+
+D_BC <- phyloseq::distance(PSB.CSS.no.na, "bray")
+
+adonis <- adonis2(D_BC ~ BMI.group, data = data.frame(sample_data(PSB.CSS.no.na)),permutations = 9999)
+adonis
+```
+Pairwise PERMANOVA
+
+```{r}
+RVAideMemoire::pairwise.perm.manova(D_BC ,data.frame(sample_data(PSB.CSS.no.na))$BMI.group,nperm=9999)
+```
+
+#### Bifidobacteria days
+
+```{r}
+ps <- subset_samples(PSB.CSS, Sample.type == "Faecal sample" & Days %in% c("3","30","60","90"))
+ps@sam_data$Days <- factor(ps@sam_data$Days, levels = c("3","30","60","90"))
+ps <- subset_taxa(ps,Genus=="Bifidobacterium")
+
+#Do PCoA ordination based on Bray-curtis distance
+GP.ord <- ordinate(ps, "PCoA", "bray")
+
+
+beta.faec.bifi.bmi = plot_ordination(ps, GP.ord, color="BMI.group") + 
+  stat_ellipse(geom = "polygon", level = 0.95, fill = NA, size = 1) +
+  #scale_fill_manual(values= col_fil) +
+  scale_color_manual(values = col_fil,name="Pre-pregnancy BMI") +
+  theme(strip.background = element_rect(colour = "white", fill = "white"),
+        plot.title = element_text(hjust = 0.5)
+        #legend.title = element_text("Days after birth")
+  ) +
+  ggtitle("Infant faeces") +
+  ggplot2::annotate("text", x = -0.40, y = 0.40, label = "p = 0.0001")
+
+sl(beta.faec.bifi.bmi,beta.faec.bifi.bmi,overwrite=T)
+
+beta.faec.bifi.bmi
+```
+
+Permanova statistics
+
+```{r, eval = T, include = T, echo = F, message = F}
+
+D_BC <- phyloseq::distance(ps, "bray")
+
+adonis <- adonis2(D_BC ~ BMI.group, data = data.frame(sample_data(ps)),permutations = 9999)
+adonis
+```
+Pairwise PERMANOVA
+
+```{r}
+RVAideMemoire::pairwise.perm.manova(D_BC ,data.frame(sample_data(ps))$BMI.group,nperm=9999)
+```
+
+## Time + Batch effects
+
+```{r, message = F}
+load("0.3_deduplicated_and_decontaminated.RData")
+
+ps <- subset_samples(PSB.CSS, Sample.type %in% c("Milk","Faecal sample") & Days %in% c("3","30","60","90"))
+ps@sam_data$Days <- as.factor(ps@sam_data$Days)
+
+
+#Do PCoA ordination based on Bray-curtis distance
+GP.ord <- ordinate(ps, "PCoA", "bray")
+
+#####################Run + Batch
+
+#PSB.CSS@sam_data$Run <- as.factor(PSB.CSS@sam_data$Run)
+
+#PSB.CSS.all@sam_data$Batch <- as.factor(ps@sam_data$Batch)
+
+beta.days = plot_ordination(ps, GP.ord, color="Days") + 
+  stat_ellipse(geom = "polygon", level = 0.95, fill = NA, size = 1) +
+  scale_color_manual(values= col_fil) +
+  theme_classic() + 
+  theme(text = element_text(size = 12, family = 'serif'),
+        axis.line=element_line(size=1),
+        axis.text=element_text(size = 12, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        #axis.text.x=element_text(angle = 45, hjust = 1),
+        strip.text.x = element_text(size = 12, angle = 0),
+        legend.text = element_text(size = 12)
+        #legend.position = "none"
+  ) +facet_wrap(~Sample.type ,scales="free")
+
+beta.days
+
+#batch
+
+beta.batch = plot_ordination(ps, GP.ord, color="Batch") + 
+  stat_ellipse(geom = "polygon", level = 0.95, fill = NA, size = 1) +
+  scale_color_manual(values= col_fil) +
+  theme_classic() + 
+  theme(text = element_text(size = 12, family = 'serif'),
+        axis.line=element_line(size=1),
+        axis.text=element_text(size = 12, colour = "Black"),
+        axis.ticks=element_line(size=1, colour = "Black"),
+        strip.background = element_rect(colour = "white", fill = "white"),
+        #axis.text.x=element_text(angle = 45, hjust = 1),
+        strip.text.x = element_text(size = 12, angle = 0),
+        legend.text = element_text(size = 12)
+        #legend.position = "none"
+  ) +facet_wrap(~Sample.type ,scales="free")
+
+beta.batch
+```
+
+
+
+# Related vs unrelated sample similarity
+
+Make table of bray curtis distances between each sample with column specifying sample type and whether individuals are related or unrelated.
+
+```{r, eval = T, include = T, echo = F, message = F, warning = F, fig.fullwidth = TRUE}
+set.seed(1015)
+
+#############Generate Bray curtis pairwise distance data frame:
+
+#PSB.CSS.sub <- subset_samples(PSB.CSS.sub, Days %in% c("60",NA))
+
+metadata <- meta.dat
+
+
+################### Calculate the distance objects
+
+## Weighted Unifrac
+
+sl(wunifracDist,phyloseq::distance(PSB.CSS, "wunifrac"),overwrite = FALSE)
+
+# Coerce distance object into matrix
+wunifracDistMtx <- as.matrix(wunifracDist)
+
+# Melt and remove values of 0 to eliminate distances of each sample to itself
+wunifracDistMtx_melt <- subset(reshape2::melt(wunifracDistMtx, 
+                                                value.name = "WUnifrac_Distance"))
+                                 #WUnifrac_Distance != 0)
+
+## Unifrac distance - binary
+
+sl(unifracDist,phyloseq::distance(PSB, "unifrac"),overwrite = FALSE)
+
+# Coerce distance object into matrix
+unifracDistMtx <- as.matrix(unifracDist)
+
+# Melt and remove values of 0 to eliminate distances of each sample to itself
+unifracDistMtx_melt <- subset(reshape2::melt(unifracDistMtx, 
+                                                value.name = "unifrac_Distance"))
+                                 #unifrac_Distance != 0)
+
+## Bray curtis
+
+sl(brayDist,phyloseq::distance(PSB.CSS, "bray", binary = FALSE),overwrite = FALSE)
+
+# Coerce distance object into matrix
+brayDistMtx <- as.matrix(brayDist)
+
+# Melt and remove values of 0 to eliminate distances of each sample to itself
+brayDistMtx_melt <- subset(reshape2::melt(brayDistMtx, 
+                                                value.name = "bray_Distance"))
+                                 #bray_Distance != 0)
+
+## Jaccard - binary
+
+sl(jaccardDist,phyloseq::distance(PSB, "jaccard", binary = TRUE),overwrite = FALSE)
+
+# Coerce distance object into matrix
+jaccardDistMtx <- as.matrix(jaccardDist)
+
+# Melt and remove values of 0 to eliminate distances of each sample to itself
+jaccardDistMtx_melt <- subset(reshape2::melt(jaccardDistMtx, 
+                                                value.name = "jaccard_Distance"))
+                                 #jaccard_Distance != 0)
+
+
+################# Combine the matrices 
+
+CombDistMtx_melt <- tibble::add_column(wunifracDistMtx_melt,
+                                       Unifrac_Distance = unifracDistMtx_melt$unifrac_Distance,
+                                       BrayCurtis_Distance = brayDistMtx_melt$bray_Distance,
+                                       Jaccard_Distance =  jaccardDistMtx_melt$jaccard_Distance,
+                                       .after = "WUnifrac_Distance")
+
+################ Relation distance function
+
+get_relation_distances <- function(dist_matrix = "CombDistMtx_melt"){
+
+#remove values of 0 to eliminate distances of each sample to itself
+
+CombDistMtx_melt <- subset(CombDistMtx_melt,Unifrac_Distance != 0)
+
+# Change Var1 and Var2 from factors to characters for easier use with dplyr
+factorCols <- c("Var1", "Var2")
+CombDistMtx_melt[factorCols] <- lapply(CombDistMtx_melt[factorCols], 
+                                             as.character)
+
+# Add columns for later subsetting when plotting.  This information will get
+#   pulled from the metadata (metadataStool).  Within the *DistMtx_melt data 
+#   frames, we need a column indicating whether Var1 and Var2 are infants,
+#   mothers, and whether they're related.
+CombDistDF <- CombDistMtx_melt
+
+CombDistDF <- CombDistDF %>%
+  mutate(Var1_id = metadata[CombDistDF$Var1, "ID"],
+         Var2_id = metadata[CombDistDF$Var2, "ID"],
+         Var1_sample = metadata[CombDistDF$Var1, "Sample.type"],
+         Var2_sample = metadata[CombDistDF$Var2, "Sample.type"],
+         Var1_days = metadata[CombDistDF$Var1, "Days"],
+         Var2_days = metadata[CombDistDF$Var2, "Days"],
+         Var1_batch = metadata[CombDistDF$Var1, "Batch"],
+         Var2_batch = metadata[CombDistDF$Var2, "Batch"],
+         Var1_run = metadata[CombDistDF$Var1, "Run"],
+         Var2_run = metadata[CombDistDF$Var2, "Run"]
+         )
+
+CombDistDF <- CombDistDF %>% mutate(Relation = ifelse(Var1_id == Var2_id, "Related", "Unrelated")) %>%
+  unite("sample_comparison",c(Var1_sample,Var2_sample),sep=" vs ",remove=FALSE) %>%
+  unite("comparison_relation",c(sample_comparison,Relation), sep="_", remove=FALSE)
+
+# Wihin each gorup select a subset of unrelated samples equal to the number of related samples
+
+datalist = list()
+comparisons = unique(CombDistDF$sample_comparison)
+
+for (i in 1:length(comparisons)){
+  compar = comparisons[i]
+  print(compar)
+  related.df <- subset(CombDistDF, sample_comparison == compar & Relation == "Related")
+  unrelated.df <- subset(CombDistDF, sample_comparison == compar & Relation == "Unrelated")
+  unrelated.df.sub <- dplyr::sample_n(unrelated.df, size = nrow(related.df))
+  datalist[[i]] <- rbind(related.df,unrelated.df.sub)
+}
+
+CombDistDF = do.call(rbind, datalist)
+return(CombDistDF)
+}
+
+sl(dist.relation,get_relation_distances(CombDistMtx_melt),overwrite = T)
+
+dist.relation <- dist.relation %>%
+  dplyr::rowwise() %>%
+  dplyr::mutate(Timepoint = ifelse(Var1_days == Var2_days & !is.na(Var1_days), Var1_days, NA))
+
+#Remove skin swabs due to too few samples
+dist.relation.subset <- subset(dist.relation, Var1_sample != "Skin swab" & Var2_sample != "Skin swab")
+```
+
+## All samples
+
+### Bray curtis distance boxplots
+
+```{r, eval = T, include = T, echo = F, message = F}
+Pairelation.all.bray <- ggplot(
+  subset(dist.relation.subset,BrayCurtis_Distance!=0),  
+    aes(Relation,BrayCurtis_Distance,fill = Relation)) +
+  geom_boxplot(outlier.shape=NA, show.legend = FALSE)+
+  #  geom_jitter(width = 0.2) +
+  ylab("Bray-curtis distance") +
+  #xlab("Infant faecal samples") +
+  theme_classic() +
+  scale_fill_aaas() +
+  stat_compare_means(method = "anova" ,label.x.npc = 0, label.y.npc = 0.2)+
+  facet_wrap("sample_comparison", scales = "free")
+
+Pairelation.all.bray
+```
+
+### Weighted Unifrac distance boxplots
+
+```{r, eval = T, include = T, echo = F, message = F}
+Pairelation.all.wunifrac <- 
+  ggplot(subset(dist.relation.subset,WUnifrac_Distance!=0),
+         aes(Relation,WUnifrac_Distance,fill = Relation)) +
+  geom_boxplot(outlier.shape=NA, show.legend = FALSE)+
+  #  geom_jitter(width = 0.2) +
+  ylab("Bray-curtis distance") +
+  #xlab("Infant faecal samples") +
+  theme_classic() +
+  scale_fill_aaas() +
+  stat_compare_means(method = "anova" ,label.x.npc = 0, label.y.npc = 0.2)+
+  facet_wrap("sample_comparison", scales = "free")
+
+Pairelation.all.wunifrac
+```
+
+### Jaccard (binary) distance boxplots
+
+```{r, eval = T, include = T, echo = F, message = F}
+Pairelation.all.jaccard <- 
+  ggplot(subset(dist.relation.subset,Jaccard_Distance!=0),
+         aes(Relation,Jaccard_Distance,fill = Relation)) +
+  geom_boxplot(outlier.shape=NA, show.legend = FALSE)+
+  #  geom_jitter(width = 0.2) +
+  ylab("Bray-curtis distance") +
+  #xlab("Infant faecal samples") +
+  theme_classic() +
+  scale_fill_aaas() +
+  stat_compare_means(method = "anova" ,label.x.npc = 0, label.y.npc = 0.2)+
+  facet_wrap("sample_comparison", scales = "free")
+
+Pairelation.all.jaccard
+```
+
+### Unifrac (binary phylogenetic) distance boxplots
+
+```{r, eval = T, include = T, echo = F, message = F}
+
+Pairelation.all.unifrac <- 
+  ggplot(subset(dist.relation.subset,Unifrac_Distance!=0),
+         aes(Relation,Unifrac_Distance,fill = Relation)) +
+  geom_boxplot(outlier.shape=NA, show.legend = FALSE)+
+  #  geom_jitter(width = 0.2) +
+  ylab("Bray-curtis distance") +
+  #xlab("Infant faecal samples") +
+  theme_classic() +
+  scale_fill_aaas() +
+  stat_compare_means(method = "anova" ,label.x.npc = 0, label.y.npc = 0.2)+
+  facet_wrap("sample_comparison", scales = "free")
+
+Pairelation.all.unifrac
+```
+
+## Over time
+
+### Milk vs Faecal
+
+#### Wunifrac
+
+```{r, eval = T, include = T, echo = F, message = F}
+CombDistDF.subset.milk <- subset(dist.relation.subset, sample_comparison %in% c("Milk vs Faecal sample")  & Timepoint != "NA" )
+
+Pairelation.all.wunifrac <- 
+  ggplot(CombDistDF.subset.milk,aes(Relation,WUnifrac_Distance,fill = Relation)) +
+  geom_boxplot(outlier.shape=NA, show.legend = FALSE)+
+  #  geom_jitter(width = 0.2) +½
+  #ylab("Bray-curtis distance") +
+  #xlab("Infant faecal samples") +
+  theme_classic() +
+  scale_fill_aaas() +
+  stat_compare_means(method = "anova" ,label.x.npc = 0, label.y.npc = 0.4)+
+  facet_wrap("Timepoint", scales = "free")
+
+Pairelation.all.wunifrac
+```
+### Bray
+
+```{r, eval = T, include = T, echo = F, message = F}
+CombDistDF.subset.milk <- subset(dist.relation.subset, sample_comparison %in% c("Milk vs Faecal sample")  & Timepoint != "NA" )
+
+Pairelation.all.bray <- 
+  ggplot(CombDistDF.subset.milk,aes(Relation,BrayCurtis_Distance,fill = Relation)) +
+  geom_boxplot(outlier.shape=NA, show.legend = FALSE)+
+  #  geom_jitter(width = 0.2) +½
+  #ylab("Bray-curtis distance") +
+  #xlab("Infant faecal samples") +
+  theme_classic() +
+  scale_fill_aaas() +
+  stat_compare_means(method = "anova" ,label.x.npc = 0, label.y.npc = 0.4)+
+  facet_wrap("Timepoint", scales = "free")
+
+Pairelation.all.bray
+```
+
+## Batch differences
+
+### Milk
+
+#### Batch
+
+```{r, eval = T, include = T, echo = F, message = F}
+CombDistDF.subset.milk <- subset(dist.relation.subset, sample_comparison %in% c("Milk vs Milk") )
+
+Pairelation.milk.wunifrac.batch <- 
+  ggplot(CombDistDF.subset.milk,aes(Relation,WUnifrac_Distance,fill = Relation)) +
+  geom_boxplot(outlier.shape=NA, show.legend = FALSE)+
+  #  geom_jitter(width = 0.2) +
+  ylab("Bray-curtis distance") +
+  #xlab("Infant faecal samples") +
+  theme_classic() +
+  scale_fill_aaas() +
+  stat_compare_means(method = "anova" ,label.x.npc = 0, label.y.npc = 0.4)+
+  facet_wrap("Var1_batch")
+
+Pairelation.milk.wunifrac.batch
+
+```
+
+#### Run
+
+```{r, eval = T, include = T, echo = F, message = F}
+Pairelation.milk.wunifrac.run <- 
+  ggplot(CombDistDF.subset.milk,aes(Relation,WUnifrac_Distance,fill = Relation)) +
+  geom_boxplot(outlier.shape=NA, show.legend = FALSE)+
+  #  geom_jitter(width = 0.2) +
+  ylab("Bray-curtis distance") +
+  #xlab("Infant faecal samples") +
+  theme_classic() +
+  scale_fill_aaas() +
+  stat_compare_means(method = "anova" ,label.x.npc = 0, label.y.npc = 0.4)+
+  facet_wrap(vars(Var1_batch,Var1_run))
+
+Pairelation.milk.wunifrac.run
+```
+
+#### Check milk batch 2 info
+
+```{r, eval = F, include = T, echo = F, message = F}
+milk.b2 <- subset_samples(PSB,Sample.type == "Milk" & Batch == "2")
+
+mb2.meta <- data.frame(sample_data(milk.b2))
+```
+
+### Faeces
+
+```{r eval=T, echo=F, message=FALSE, include=T}
+CombDistDF.subset.faeces <- subset(dist.relation.subset, sample_comparison %in% c("Faecal sample vs Faecal sample"))
+
+Pairelation.all.wunifrac <- 
+  ggplot(CombDistDF.subset.faeces,aes(Relation,WUnifrac_Distance,fill = Relation)) +
+  geom_boxplot(outlier.shape=NA, show.legend = FALSE)+
+  #  geom_jitter(width = 0.2) +
+  ylab("Bray-curtis distance") +
+  #xlab("Infant faecal samples") +
+  theme_classic() +
+  scale_fill_aaas() +
+  stat_compare_means(method = "anova" ,label.x.npc = 0, label.y.npc = 0.2)
+
+Pairelation.all.wunifrac
+```
+
+# Effect sizes
+
+## Milk
+
+First otu and metadata matrices are formated, and a suitable subset of variables to examine are selected
+
+```{r, eval = T, include = F, echo = F, message = F}
+######Importing-Data
+# PSB.R <- microbiome::transform(
+#   subset_samples(PSB, Sample.type == "Milk"),
+#   "compositional")
+
+PSB.R <- subset_samples(PSB.CSS, Sample.type == "Milk")
+
+import.otu.table <- as.data.frame(otu_table(
+  PSB.R
+  )
+  ) #%>%
+  #mutate_all(as.numeric) #Convert to numeric where possible
+
+cure.data = as.data.frame(as.matrix(PSB.R@sam_data))
+
+#import.taxonomy = read.table('virome_taxonomy_LCA_known.txt', header = T)
+
+rownames <- rownames(cure.data)
+
+#Remove NA columns
+cure.data <- cure.data[ , ! apply( cure.data , 2 , function(x) all(is.na(x)) ) ]
+
+rownames(cure.data) <- rownames
+
+#cure.data <- cure.data %>% mutate_if(is.character, as.numeric)
+
+X8.nonrarefied = t(import.otu.table)                                                                  ###%%% non-rarefied
+
+
+###rarefying|subsampling reads in every sample
+#barplot(colSums(import.otu.table))
+#min(colSums(import.otu.table))
+
+#rare8 = rarefy(as.matrix(t(import.otu.table)), sample = 5000)
+rare8 = t(import.otu.table)
+
+X8.rarefied = as.data.frame(rare8)                                                                 ###%%% rarefied
+
+###Subset metadata to match remaining samples after rarefaction
+
+Y.all = cure.data[rownames(X8.rarefied),]
+
+###Log tranformation
+#X = log10(X8.rarefied+1)
+X <- X8.rarefied
+
+#Select relevant numeric column
+
+Y <- dplyr::select(Y.all,all_of(effect.size.variables)) 
+  
+#Y <- Y.all %>% dplyr::select_if(is.factor)
+
+#,"Weight_sept_2020", "Glucose_sept_GGT" , "Insulin_sept_GGT", "Cpeptide_sept_GGT", "HbA1c", "Glucagon_sept_GGT", "HOMA_IR"
+
+colnames(Y) #Check remaining columns
+
+###Select only numeric metadata culumns
+
+Y <- Y %>%
+  mutate(
+    DNA.conc = as.numeric(DNA.conc),
+    #Batch = as.numeric(Batch),
+    #Days = as.numeric(Days),
+    Maternal.age = as.numeric(Maternal.age),
+    ppBMI = as.numeric(ppBMI),
+    Gestational.age = as.numeric(Gestational.age),
+    Birth.weight = as.numeric(Birth.weight),
+    delta.whz = as.numeric(delta.whz),
+    BMI.delta.3m = as.numeric(BMI.delta.3m),
+    delta.waz = as.numeric(delta.waz),
+    delta.haz = as.numeric(delta.waz)
+  )
+
+#Set numeric column class
+Y <- Y %>% mutate_if(is.character,as.factor)
+
+str(Y)
+
+#colnames(Y) #Check remaining columns
+
+##vifcor
+##collinearity
+
+#Select relevant columns for that are non-collinear
+
+```
+
+### Db anova
+
+
+#### Bray curttis - constrained by batch + time
+
+```{r, eval = T, include = T, echo = F, message = F, warning =  F, fig.width=10, fig.height=6, fig.fullwidth = TRUE}
+###############Anova on capscale - all variables
+
+anova.m <- matrix(nrow = 0, ncol =6) #Create matrix for results
+colnames(anova.m) <- c("Df","SumOfSqs","F","Pr.F","Residual.Df","Residual.SumOfSqs")                
+for (i in colnames(dplyr::select(Y,-c("Batch","Days")))){
+  X.sub <- X[!is.na(Y[[i]]), ]
+  Y.sub <- Y[!is.na(Y[[i]]), ]
+  anova <- as.matrix(anova.cca(capscale(X.sub ~ Y.sub[,i] + Days + Condition(Batch), Y.sub, dist = "bray"),permutations = how(nperm=9999)))
+  anova <- c(anova[1,],anova[2,1:2])
+  anova.m <-rbind(anova.m,anova)
+}
+
+rownames(anova.m) <- colnames(dplyr::select(Y,-c("Batch","Days")))
+
+#Prepare for plotting
+
+anova.dat <- anova.m %>%
+  as.data.frame() %>%
+  tibble::add_column(Variable = rownames(anova.m),.name_repair = "minimal") %>%
+  arrange(F)
+
+#Add adjusted p-values
+anova.dat$Pr.F.adj <- p.adjust(anova.dat$Pr.F, method = 'holm')
+
+#Show table
+#knitr::kable(anova.dat)
+
+#Calculate sum of squares
+anova.dat$R2 <- anova.dat$SumOfSqs / (anova.dat$SumOfSqs + anova.dat$Residual.SumOfSqs)
+
+anova.dat <- anova.dat %>%
+  arrange(R2)
+
+##Fancy plot
+
+anova.melt <- tidyr::pivot_longer(anova.dat,cols=c("R2"), names_to='measure', values_to="value") %>%
+  add_significance(p.col = "Pr.F.adj", output.col = "PrF.sym",
+                   cutpoints = c(0, 1e-04, 0.001, 0.01, 0.05, 0.1,1),
+                   symbols = c("****", "***", "**", "*", "\U0387", "")
+                   )
+
+anova.melt.bac.milk.batch.time <- anova.melt
+
+permanova.bac.milk.batch.time <- ggbarplot(anova.melt,
+                                         x="Variable",
+                                         y="value",
+                                         #color = "Variable",
+                                         orientation = c("horizontal"),
+                                         color = NA,
+                                         fill = "measure",
+                                         position=position_dodge(0.7),
+                                         label = anova.melt$PrF.sym,
+                                         lab.size = 9,
+                                         lab.vjust = 0.7,
+                                         lab.hjust = -0.3
+                                         
+) +
+  #stat_pvalue_manual(
+  #  adonis.melt,  label = "PrF.sym", tip.length = 0.01
+  #) +
+  #geom_hline(yintercept = 0.05) +
+  ggtitle("Capscale dbRDA effect size: all variables") +
+  ylab(expression(R^2~"value")) +
+  scale_fill_jco()
+
+permanova.bac.milk.batch.time
+
+```
+
+#### Bray curttis -constrained by batch
+
+```{r, eval = F, include = T, echo = F, message = F, warning =  F, fig.width=10, fig.height=6, fig.fullwidth = TRUE}
+###############Anova on capscale - all variables
+
+anova.m <- matrix(nrow = 0, ncol =6) #Create matrix for results
+colnames(anova.m) <- c("Df","SumOfSqs","F","Pr.F","Residual.Df","Residual.SumOfSqs")                
+for (i in colnames(dplyr::select(Y,-c("Batch")))){
+  X.sub <- X[!is.na(Y[[i]]), ]
+  Y.sub <- Y[!is.na(Y[[i]]), ]
+  anova <- as.matrix(anova.cca(capscale(X.sub ~ Y.sub[,i] + Condition(Batch), Y.sub, dist = "bray"),permutations = how(nperm=9999)))
+  anova <- c(anova[1,],anova[2,1:2])
+  anova.m <-rbind(anova.m,anova)
+}
+
+rownames(anova.m) <- colnames(dplyr::select(Y,-c("Batch")))
+
+#Prepare for plotting
+
+anova.dat <- anova.m %>%
+  as.data.frame() %>%
+  tibble::add_column(Variable = rownames(anova.m),.name_repair = "minimal") %>%
+  arrange(F)
+
+#Add adjusted p-values
+anova.dat$Pr.F.adj <- p.adjust(anova.dat$Pr.F, method = 'holm')
+
+#Show table
+#knitr::kable(anova.dat)
+
+#Calculate sum of squares
+anova.dat$R2 <- anova.dat$SumOfSqs / (anova.dat$SumOfSqs + anova.dat$Residual.SumOfSqs)
+
+anova.dat <- anova.dat %>%
+  arrange(R2)
+
+##Fancy plot
+
+anova.melt <- tidyr::pivot_longer(anova.dat,cols=c("R2"), names_to='measure', values_to="value") %>%
+  add_significance(p.col = "Pr.F.adj", output.col = "PrF.sym",
+                   cutpoints = c(0, 1e-04, 0.001, 0.01, 0.05, 0.1,1),
+                   symbols = c("****", "***", "**", "*", "\U0387", "")
+                   )
+
+anova.melt.bac <- anova.melt
+
+fancy.anova.bar.milk.bray.batch.day <- ggbarplot(anova.melt,
+                                         x="Variable",
+                                         y="value",
+                                         #color = "Variable",
+                                         orientation = c("horizontal"),
+                                         color = NA,
+                                         fill = "measure",
+                                         position=position_dodge(0.7),
+                                         label = anova.melt$PrF.sym,
+                                         lab.size = 9,
+                                         lab.vjust = 0.7,
+                                         lab.hjust = -0.3
+                                         
+) +
+  #stat_pvalue_manual(
+  #  adonis.melt,  label = "PrF.sym", tip.length = 0.01
+  #) +
+  #geom_hline(yintercept = 0.05) +
+  ggtitle("Capscale dbRDA effect size: all variables") +
+  ylab(expression(R^2~"value")) +
+  scale_fill_jco()
+
+fancy.anova.bar.milk.bray.batch.day
+
+```
+
+#### Bray curttis - constrained by batch + time + Secretor
+
+```{r, eval = T, include = T, echo = F, message = F, warning =  F, fig.width=10, fig.height=6, fig.fullwidth = TRUE}
+###############Anova on capscale - all variables
+
+anova.m <- matrix(nrow = 0, ncol =6) #Create matrix for results
+colnames(anova.m) <- c("Df","SumOfSqs","F","Pr.F","Residual.Df","Residual.SumOfSqs")               
+
+Y.sec <- Y[!is.na(Y[["Secretor"]]),]
+X.sec <- X[!is.na(Y[["Secretor"]]),]              
+
+for (i in colnames(dplyr::select(Y.sec,-c("Batch","Days","DNA.conc","Secretor","Lewis")))){
+  X.sub <- X.sec[!is.na(Y.sec[[i]]), ]
+  Y.sub <- Y.sec[!is.na(Y.sec[[i]]), ]
+  anova <- as.matrix(anova.cca(capscale(X.sub ~ Y.sub[,i] + Days + Condition(Batch+Secretor+Lewis), Y.sub, dist = "bray"),permutations = how(nperm=9999)))
+  anova <- c(anova[1,],anova[2,1:2])
+  anova.m <-rbind(anova.m,anova)
+}
+
+rownames(anova.m) <- colnames(dplyr::select(Y,-c("Batch","Days","DNA.conc","Secretor","Lewis")))
+
+#Prepare for plotting
+
+anova.dat <- anova.m %>%
+  as.data.frame() %>%
+  tibble::add_column(Variable = rownames(anova.m),.name_repair = "minimal") %>%
+  arrange(F)
+
+#Add adjusted p-values
+anova.dat$Pr.F.adj <- p.adjust(anova.dat$Pr.F, method = 'holm')
+
+#Show table
+#knitr::kable(anova.dat)
+
+#Calculate sum of squares
+anova.dat$R2 <- anova.dat$SumOfSqs / (anova.dat$SumOfSqs + anova.dat$Residual.SumOfSqs)
+
+anova.dat <- anova.dat %>%
+  arrange(R2)
+
+##Fancy plot
+
+anova.melt <- tidyr::pivot_longer(anova.dat,cols=c("R2"), names_to='measure', values_to="value") %>%
+  add_significance(p.col = "Pr.F.adj", output.col = "PrF.sym",
+                   cutpoints = c(0, 1e-04, 0.001, 0.01, 0.05, 0.1,1),
+                   symbols = c("****", "***", "**", "*", "\U0387", "")
+                   )
+
+anova.melt.bac.milk.batch.time.sec <- anova.melt
+
+permanova.bac.milk.batch.time.sec <- ggbarplot(anova.melt,
+                                         x="Variable",
+                                         y="value",
+                                         #color = "Variable",
+                                         orientation = c("horizontal"),
+                                         color = NA,
+                                         fill = "measure",
+                                         position=position_dodge(0.7),
+                                         label = anova.melt$PrF.sym,
+                                         lab.size = 9,
+                                         lab.vjust = 0.7,
+                                         lab.hjust = -0.3
+                                         
+) +
+  #stat_pvalue_manual(
+  #  adonis.melt,  label = "PrF.sym", tip.length = 0.01
+  #) +
+  #geom_hline(yintercept = 0.05) +
+  ggtitle("Capscale dbRDA effect size: all variables") +
+  ylab(expression(R^2~"value")) +
+  scale_fill_jco()
+
+permanova.bac.milk.batch.time.sec
+
+```
+
+
+#### Bray curttis - constrained by batch + time + BMI
+
+```{r, eval = T, include = T, echo = F, message = F, warning =  F, fig.width=10, fig.height=6, fig.fullwidth = TRUE}
+###############Anova on capscale - all variables
+
+anova.m <- matrix(nrow = 0, ncol =6) #Create matrix for results
+colnames(anova.m) <- c("Df","SumOfSqs","F","Pr.F","Residual.Df","Residual.SumOfSqs")                
+for (i in colnames(dplyr::select(Y,-c("Batch","Days","BMI")))){
+  X.sub <- X[!is.na(Y[[i]]), ]
+  Y.sub <- Y[!is.na(Y[[i]]), ]
+  anova <- as.matrix(anova.cca(capscale(X.sub ~ Y.sub[,i] + Days + Condition(Batch+BMI), Y.sub, dist = "bray"),permutations = how(nperm=999)))
+  anova <- c(anova[1,],anova[2,1:2])
+  anova.m <-rbind(anova.m,anova)
+}
+
+rownames(anova.m) <- colnames(dplyr::select(Y,-c("Batch","Days","BMI")))
+
+#Prepare for plotting
+
+anova.dat <- anova.m %>%
+  as.data.frame() %>%
+  tibble::add_column(Variable = rownames(anova.m),.name_repair = "minimal") %>%
+  arrange(F)
+
+#Add adjusted p-values
+anova.dat$Pr.F.adj <- p.adjust(anova.dat$Pr.F, method = 'holm')
+
+#Show table
+#knitr::kable(anova.dat)
+
+#Calculate sum of squares
+anova.dat$R2 <- anova.dat$SumOfSqs / (anova.dat$SumOfSqs + anova.dat$Residual.SumOfSqs)
+
+anova.dat <- anova.dat %>%
+  arrange(R2)
+
+##Fancy plot
+
+anova.melt <- tidyr::pivot_longer(anova.dat,cols=c("R2"), names_to='measure', values_to="value") %>%
+  add_significance(p.col = "Pr.F.adj", output.col = "PrF.sym",
+                   cutpoints = c(0, 1e-04, 0.001, 0.01, 0.05, 0.1,1),
+                   symbols = c("****", "***", "**", "*", "\U0387", "")
+                   )
+
+anova.melt.bac.milk.batch.time.bmi <- anova.melt
+
+permanova.bac.milk.batch.time.bmi <- ggbarplot(anova.melt,
+                                         x="Variable",
+                                         y="value",
+                                         #color = "Variable",
+                                         orientation = c("horizontal"),
+                                         color = NA,
+                                         fill = "measure",
+                                         position=position_dodge(0.7),
+                                         label = anova.melt$PrF.sym,
+                                         lab.size = 9,
+                                         lab.vjust = 0.7,
+                                         lab.hjust = -0.3
+                                         
+) +
+  #stat_pvalue_manual(
+  #  adonis.melt,  label = "PrF.sym", tip.length = 0.01
+  #) +
+  #geom_hline(yintercept = 0.05) +
+  ggtitle("Capscale dbRDA effect size: all variables") +
+  ylab(expression(R^2~"value")) +
+  scale_fill_jco()
+
+permanova.bac.milk.batch.time.bmi
+
+```
+
+
+
+
+
+### RDA and dbRDA(Bray) variable selection - milk (for comparison)
+
+```{r, eval = T, include = T, echo = F, message = F, warning =  F, fig.width=10, fig.height=4, fig.fullwidth = TRUE}
+
+#RDA
+Y.na <- na.omit(Y) #%>% select(rev(names(.)))
+X.na <- X[rownames(Y.na),]
+
+mod0 <- rda(X.na ~ 1 + Condition(Batch+Days), Y.na)  # Model with intercept only
+mod1 <- rda(X.na ~ . + Condition(Batch+Days), Y.na)  # Model with all eX.naplanatory variables
+
+## With scope present, the default direction is "both"
+sl(ord.scope.both.milk,ordistep(mod0, scope = formula(mod1), direction="both", permutations = how(nperm = 999)),overwrite=FALSE)
+
+ord.scope.both.milk$anova
+ord.scope.both.milk$call
+
+#Write our new model
+spe.rda.signif <- rda(formula = X.na ~ Condition(Batch + Days) + Induction, data = Y.na)
+
+RsquareAdj(spe.rda.signif)
+
+anova.cca(spe.rda.signif, step = 1000)
+
+anova.cca(spe.rda.signif, step = 1000, by = "term")
+
+#dbRDA
+
+mod0 <- dbrda(X.na ~ 1 + Condition(Batch+Days), Y.na, distance = "bray")  # Model with intercept only
+mod1 <- dbrda(X.na ~ . + Condition(Batch+Days), Y.na, distance = "bray")  # Model with all eX.naplanatory variables
+
+## With scope present, the default direction is "both"
+sl(ord.scope.both.bray.milk,ordistep(mod0, scope = formula(mod1), direction="both",permutations = how(nperm = 999)),overwrite=FALSE)
+
+ord.scope.both.bray.milk$anova
+ord.scope.both.bray.milk$call
+
+#Write our new model
+spe.rda.signif <- dbrda(formula = X.na ~ Condition(Batch + Days) + BMI + Breastfeeding.issues + 
+    Maternal.age, data = Y.na, distance = "bray")
+
+RsquareAdj(spe.rda.signif)
+
+anova.cca(spe.rda.signif, step = 1000)
+
+anova.cca(spe.rda.signif, step = 1000, by = "term")
+
+```
+
+## Faeces
+
+```{r, eval = T, include = F, echo = F, message = F}
+
+######Importing-Data
+
+# PSB.R <- microbiome::transform(
+#   subset_samples(PSB, Sample.type == "Faecal sample"),
+#   "compositional")
+
+PSB.R <- subset_samples(PSB.CSS, Sample.type == "Faecal sample")
+
+
+import.otu.table <- as.data.frame(otu_table(
+  PSB.R
+  )
+  ) #%>%
+  #mutate_all(as.numeric) #Convert to numeric where possible
+
+cure.data = as.data.frame(as.matrix(PSB.R@sam_data))
+
+#import.taxonomy = read.table('virome_taxonomy_LCA_known.txt', header = T)
+
+rownames <- rownames(cure.data)
+
+#Remove NA columns
+cure.data <- cure.data[ , ! apply( cure.data , 2 , function(x) all(is.na(x)) ) ]
+
+rownames(cure.data) <- rownames
+
+#cure.data <- cure.data %>% mutate_if(is.character, as.numeric)
+
+X8.nonrarefied = t(import.otu.table)                                                                  ###%%% non-rarefied
+
+
+###rarefying|subsampling reads in every sample
+#barplot(colSums(import.otu.table))
+#min(colSums(import.otu.table))
+
+#rare8 = rarefy(as.matrix(t(import.otu.table)), sample = 5000)
+rare8 = t(import.otu.table)
+
+X8.rarefied = as.data.frame(rare8)                                                                 ###%%% rarefied
+
+###Subset metadata to match remaining samples after rarefaction
+
+Y.all = cure.data[rownames(X8.rarefied),]
+
+###Log tranformation
+#X = log10(X8.rarefied+1)
+X <- X8.rarefied
+
+#Select relevant numeric column
+
+Y <- dplyr::select(Y.all,all_of(effect.size.variables)) 
+  
+#Y <- Y.all %>% dplyr::select_if(is.factor)
+
+#,"Weight_sept_2020", "Glucose_sept_GGT" , "Insulin_sept_GGT", "Cpeptide_sept_GGT", "HbA1c", "Glucagon_sept_GGT", "HOMA_IR"
+
+colnames(Y) #Check remaining columns
+
+###Select only numeric metadata culumns
+
+Y <- Y %>%
+  mutate(
+    DNA.conc = as.numeric(DNA.conc),
+    # Batch = as.numeric(Batch),
+    # Days = as.numeric(Days),
+    Maternal.age = as.numeric(Maternal.age),
+    ppBMI = as.numeric(ppBMI),
+    Gestational.age = as.numeric(Gestational.age),
+    Birth.weight = as.numeric(Birth.weight),
+    delta.whz = as.numeric(delta.whz),
+    BMI.delta.3m = as.numeric(BMI.delta.3m),
+    delta.waz = as.numeric(delta.waz),
+    delta.haz = as.numeric(delta.waz)
+  )
+
+#Set numeric column class
+Y <- Y %>% mutate_if(is.character,as.factor)
+
+str(Y)
+
+#colnames(Y) #Check remaining columns
+
+##vifcor
+##collinearity
+
+#Select relevant columns for that are non-collinear
+
+```
+
+### Db anova
+
+
+#### Bray-curtis - contrined by time + batch
+
+```{r, eval = T, include = T, echo = F, message = F, warning =  F, fig.width=10, fig.height=6, fig.fullwidth = TRUE}
+###############Anova on capscale - all variables
+
+anova.m <- matrix(nrow = 0, ncol =6) #Create matrix for results
+colnames(anova.m) <- c("Df","SumOfSqs","F","Pr.F","Residual.Df","Residual.SumOfSqs")                
+for (i in colnames(dplyr::select(Y,-c("Batch","Days","DNA.conc")))){
+   X.sub <- X[!is.na(Y[[i]]), ]
+  Y.sub <- Y[!is.na(Y[[i]]), ]
+  anova <- as.matrix(anova.cca(capscale(X.sub ~ na.omit(Y.sub[,i]) + Days + Condition(Batch), Y.sub, dist = "bray"),permutations = how(nperm=999)))
+  anova <- c(anova[1,],anova[2,1:2])
+  anova.m <-rbind(anova.m,anova)
+}
+
+rownames(anova.m) <- colnames(dplyr::select(Y,-c("Batch","Days","DNA.conc")))
+
+#Prepare for plotting
+
+anova.dat <- anova.m %>%
+  as.data.frame() %>%
+  tibble::add_column(Variable = rownames(anova.m),.name_repair = "minimal") %>%
+  arrange(F)
+
+#Add adjusted p-values
+anova.dat$Pr.F.adj <- p.adjust(anova.dat$Pr.F, method = 'holm')
+
+#Show table
+#knitr::kable(anova.dat)
+
+#Calculate sum of squares
+anova.dat$R2 <- anova.dat$SumOfSqs / (anova.dat$SumOfSqs + anova.dat$Residual.SumOfSqs)
+
+anova.dat <- anova.dat %>%
+  arrange(R2)
+
+##Fancy plot
+
+anova.melt <- tidyr::pivot_longer(anova.dat,cols=c("R2"), names_to='measure', values_to="value") %>%
+  add_significance(p.col = "Pr.F.adj", output.col = "PrF.sym",
+                   cutpoints = c(0, 1e-04, 0.001, 0.01, 0.05, 0.1,1),
+                   symbols = c("****", "***", "**", "*", "\U0387", "")
+                   )
+
+anova.melt.bac.faeces.batch.time <- anova.melt
+
+permanova.bac.faeces.batch.time <- ggbarplot(anova.melt,
+                                         x="Variable",
+                                         y="value",
+                                         #color = "Variable",
+                                         orientation = c("horizontal"),
+                                         color = NA,
+                                         fill = "measure",
+                                         position=position_dodge(0.7),
+                                         label = anova.melt$PrF.sym,
+                                         lab.size = 9,
+                                         lab.vjust = 0.7,
+                                         lab.hjust = -0.3
+                                         
+) +
+  #stat_pvalue_manual(
+  #  adonis.melt,  label = "PrF.sym", tip.length = 0.01
+  #) +
+  #geom_hline(yintercept = 0.05) +
+  ggtitle("Capscale dbRDA effect size: all variables") +
+  ylab(expression(R^2~"value")) +
+  scale_fill_jco()
+
+permanova.bac.faeces.batch.time
+
+```
+
+#### Bray curttis - constrained by batch + time + BMI
+
+```{r, eval = T, include = T, echo = F, message = F, warning =  F, fig.width=10, fig.height=6, fig.fullwidth = TRUE}
+###############Anova on capscale - all variables
+
+anova.m <- matrix(nrow = 0, ncol =6) #Create matrix for results
+colnames(anova.m) <- c("Df","SumOfSqs","F","Pr.F","Residual.Df","Residual.SumOfSqs")                
+for (i in colnames(dplyr::select(Y,-c("Batch","Days","BMI")))){
+  X.sub <- X[!is.na(Y[[i]]), ]
+  Y.sub <- Y[!is.na(Y[[i]]), ]
+  anova <- as.matrix(anova.cca(capscale(X.sub ~ Y.sub[,i] + Days + Condition(Batch+BMI), Y.sub, dist = "bray"),permutations = how(nperm=999)))
+  anova <- c(anova[1,],anova[2,1:2])
+  anova.m <-rbind(anova.m,anova)
+}
+
+rownames(anova.m) <- colnames(dplyr::select(Y,-c("Batch","Days","BMI")))
+
+#Prepare for plotting
+
+anova.dat <- anova.m %>%
+  as.data.frame() %>%
+  tibble::add_column(Variable = rownames(anova.m),.name_repair = "minimal") %>%
+  arrange(F)
+
+#Add adjusted p-values
+anova.dat$Pr.F.adj <- p.adjust(anova.dat$Pr.F, method = 'holm')
+
+#Show table
+#knitr::kable(anova.dat)
+
+#Calculate sum of squares
+anova.dat$R2 <- anova.dat$SumOfSqs / (anova.dat$SumOfSqs + anova.dat$Residual.SumOfSqs)
+
+anova.dat <- anova.dat %>%
+  arrange(R2)
+
+##Fancy plot
+
+anova.melt <- tidyr::pivot_longer(anova.dat,cols=c("R2"), names_to='measure', values_to="value") %>%
+  add_significance(p.col = "Pr.F.adj", output.col = "PrF.sym",
+                   cutpoints = c(0, 1e-04, 0.001, 0.01, 0.05, 0.1,1),
+                   symbols = c("****", "***", "**", "*", "\U0387", "")
+                   )
+
+anova.melt.bac.faec.batch.time.bmi <- anova.melt
+
+permanova.bac.faec.batch.time.bmi <- ggbarplot(anova.melt,
+                                         x="Variable",
+                                         y="value",
+                                         #color = "Variable",
+                                         orientation = c("horizontal"),
+                                         color = NA,
+                                         fill = "measure",
+                                         position=position_dodge(0.7),
+                                         label = anova.melt$PrF.sym,
+                                         lab.size = 9,
+                                         lab.vjust = 0.7,
+                                         lab.hjust = -0.3
+                                         
+) +
+  #stat_pvalue_manual(
+  #  adonis.melt,  label = "PrF.sym", tip.length = 0.01
+  #) +
+  #geom_hline(yintercept = 0.05) +
+  ggtitle("Capscale dbRDA effect size: all variables") +
+  ylab(expression(R^2~"value")) +
+  scale_fill_jco()
+
+permanova.bac.faec.batch.time.bmi
+
+```
+
+#### Bray curttis - constrained by batch + time + Secretor
+
+```{r, eval = T, include = T, echo = F, message = F, warning =  F, fig.width=10, fig.height=6, fig.fullwidth = TRUE}
+###############Anova on capscale - all variables
+
+anova.m <- matrix(nrow = 0, ncol =6) #Create matrix for results
+colnames(anova.m) <- c("Df","SumOfSqs","F","Pr.F","Residual.Df","Residual.SumOfSqs")               
+
+Y.sec <- Y[!is.na(Y[["Secretor"]]),]
+X.sec <- X[!is.na(Y[["Secretor"]]),]              
+
+for (i in colnames(dplyr::select(Y.sec,-c("Batch","Days","DNA.conc","Secretor","Lewis")))){
+  X.sub <- X.sec[!is.na(Y.sec[[i]]), ]
+  Y.sub <- Y.sec[!is.na(Y.sec[[i]]), ]
+  anova <- as.matrix(anova.cca(capscale(X.sub ~ Y.sub[,i] + Days + Condition(Batch+Secretor+Lewis), Y.sub, dist = "bray"),permutations = how(nperm=999)))
+  anova <- c(anova[1,],anova[2,1:2])
+  anova.m <-rbind(anova.m,anova)
+}
+
+rownames(anova.m) <- colnames(dplyr::select(Y,-c("Batch","Days","DNA.conc","Secretor","Lewis")))
+
+#Prepare for plotting
+
+anova.dat <- anova.m %>%
+  as.data.frame() %>%
+  tibble::add_column(Variable = rownames(anova.m),.name_repair = "minimal") %>%
+  arrange(F)
+
+#Add adjusted p-values
+anova.dat$Pr.F.adj <- p.adjust(anova.dat$Pr.F, method = 'holm')
+
+#Show table
+#knitr::kable(anova.dat)
+
+#Calculate sum of squares
+anova.dat$R2 <- anova.dat$SumOfSqs / (anova.dat$SumOfSqs + anova.dat$Residual.SumOfSqs)
+
+anova.dat <- anova.dat %>%
+  arrange(R2)
+
+##Fancy plot
+
+anova.melt <- tidyr::pivot_longer(anova.dat,cols=c("R2"), names_to='measure', values_to="value") %>%
+  add_significance(p.col = "Pr.F.adj", output.col = "PrF.sym",
+                   cutpoints = c(0, 1e-04, 0.001, 0.01, 0.05, 0.1,1),
+                   symbols = c("****", "***", "**", "*", "\U0387", "")
+                   )
+
+anova.melt.bac.faec.batch.time.sec <- anova.melt
+
+permanova.bac.faec.batch.time.sec <- ggbarplot(anova.melt,
+                                         x="Variable",
+                                         y="value",
+                                         #color = "Variable",
+                                         orientation = c("horizontal"),
+                                         color = NA,
+                                         fill = "measure",
+                                         position=position_dodge(0.7),
+                                         label = anova.melt$PrF.sym,
+                                         lab.size = 9,
+                                         lab.vjust = 0.7,
+                                         lab.hjust = -0.3
+                                         
+) +
+  #stat_pvalue_manual(
+  #  adonis.melt,  label = "PrF.sym", tip.length = 0.01
+  #) +
+  #geom_hline(yintercept = 0.05) +
+  ggtitle("Capscale dbRDA effect size: all variables") +
+  ylab(expression(R^2~"value")) +
+  scale_fill_jco()
+
+permanova.bac.faec.batch.time.sec
+
+```
+
+#### Bray-curtis - constrained by batch
+
+```{r, eval = F, include = T, echo = F, message = F, warning =  F, fig.width=10, fig.height=6, fig.fullwidth = TRUE}
+###############Anova on capscale - all variables
+
+anova.m <- matrix(nrow = 0, ncol =6) #Create matrix for results
+colnames(anova.m) <- c("Df","SumOfSqs","F","Pr.F","Residual.Df","Residual.SumOfSqs")                
+for (i in colnames(dplyr::select(Y,-c("Batch")))){
+  X.sub <- X[!is.na(Y[[i]]), ]
+  Y.sub <- Y[!is.na(Y[[i]]), ]
+  anova <- as.matrix(anova.cca(capscale(X.sub ~ na.omit(Y.sub[,i]) + Condition(Batch), Y.sub, dist = "bray"),permutations = how(nperm=999)))
+  anova <- c(anova[1,],anova[2,1:2])
+  anova.m <-rbind(anova.m,anova)
+}
+
+# 
+# i <- "Gestational.age"
+# 
+# X.sub <- X[!is.na(Y[[i]]), ]
+# Y.sub <- Y[!is.na(Y[[i]]), ]
+#   
+# anova <- as.matrix(anova.cca(capscale(X.sub ~ na.omit(Y[,i]) + Condition(Batch), Y.sub, dist = "bray"),permutations = how(nperm=99999)))
+# anova <- c(anova[1,],anova[2,1:2])
+# anova.m <-rbind(anova.m,anova)
+
+
+rownames(anova.m) <- colnames(dplyr::select(Y,-c("Batch")))
+
+#Prepare for plotting
+
+anova.dat <- anova.m %>%
+  as.data.frame() %>%
+  tibble::add_column(Variable = rownames(anova.m),.name_repair = "minimal") %>%
+  arrange(F)
+
+#Add adjusted p-values
+anova.dat$Pr.F.adj <- p.adjust(anova.dat$Pr.F, method = 'holm')
+
+#Show table
+#knitr::kable(anova.dat)
+
+#Calculate sum of squares
+anova.dat$R2 <- anova.dat$SumOfSqs / (anova.dat$SumOfSqs + anova.dat$Residual.SumOfSqs)
+
+anova.dat <- anova.dat %>%
+  arrange(R2)
+
+##Fancy plot
+
+anova.melt <- tidyr::pivot_longer(anova.dat,cols=c("R2"), names_to='measure', values_to="value") %>%
+  add_significance(p.col = "Pr.F.adj", output.col = "PrF.sym",
+                   cutpoints = c(0, 1e-04, 0.001, 0.01, 0.05, 0.1,1),
+                   symbols = c("****", "***", "**", "*", "\U0387", "")
+                   )
+
+anova.melt.bac <- anova.melt
+
+fancy.anova.bar.bac <- ggbarplot(anova.melt,
+                                         x="Variable",
+                                         y="value",
+                                         #color = "Variable",
+                                         orientation = c("horizontal"),
+                                         color = NA,
+                                         fill = "measure",
+                                         position=position_dodge(0.7),
+                                         label = anova.melt$PrF.sym,
+                                         lab.size = 9,
+                                         lab.vjust = 0.7,
+                                         lab.hjust = -0.3
+                                         
+) +
+  #stat_pvalue_manual(
+  #  adonis.melt,  label = "PrF.sym", tip.length = 0.01
+  #) +
+  #geom_hline(yintercept = 0.05) +
+  ggtitle("Capscale dbRDA effect size: all variables") +
+  ylab(expression(R^2~"value")) +
+  scale_fill_jco()
+
+fancy.anova.bar.bac
+
+```
+
+
+
+## Combined effect size
+
+### Time+Batch
+
+```{r, eval = T, include = T, echo = F, message = F, warning =  F, fig.width=10, fig.height=4, fig.fullwidth = TRUE}
+anova.melt.bac.milk.batch.time$Component <- "Milk bacteria"
+anova.melt.bac.faeces.batch.time$Component <- "Faecal bacteria"
+
+# Rename variables
+
+anova.melt.comb <- rbind(anova.melt.bac.faeces.batch.time,anova.melt.bac.milk.batch.time) # bar chart order follows top df
+
+anova.melt.comb$Variable.clean <- gsub("_"," ",anova.melt.comb$Variable)
+
+
+esize.bac.feaces.milk <- ggbarplot(anova.melt.comb,
+                                         x="Variable",
+                                         y="value",
+                                         ylab = FALSE,
+                                         fill = "Component",
+                                         orientation = c("horizontal"),
+                                         #fill = "measure",
+                                         position=position_dodge(0.7),
+                                         label = anova.melt.comb$PrF.sym,
+                                         lab.size = 9,
+                                         lab.vjust = 0.8,
+                                         lab.hjust = -0.3
+                                         
+) +
+  #stat_pvalue_manual(
+  #  adonis.melt,  label = "PrF.sym", tip.length = 0.01
+  #) +
+  #geom_hline(yintercept = 0.05) +
+  #ggtitle("Capscale dbRDA effect size: all variables") +
+  ylab(expression(R^2~"value")) +
+  scale_fill_jco()
+
+esize.bac.feaces.milk
+
+save(anova.melt.comb,file="results/effect_size_bac_milk_faeces.RData")
+```
+
+### Time+Batch+Secretor
+
+```{r, eval = T, include = T, echo = F, message = F, warning =  F, fig.width=10, fig.height=4, fig.fullwidth = TRUE}
+anova.melt.bac.milk.batch.time.sec$Component <- "Milk bacteria"
+anova.melt.bac.faec.batch.time.sec$Component <- "Faecal bacteria"
+
+# Rename variables
+
+anova.melt.comb <- rbind(anova.melt.bac.milk.batch.time.sec,anova.melt.bac.faec.batch.time.sec) # bar chart order follows top df
+
+anova.melt.comb$Variable.clean <- gsub("_"," ",anova.melt.comb$Variable)
+
+
+esize.bac.feaces.milk.sec <- ggbarplot(anova.melt.comb,
+                                         x="Variable",
+                                         y="value",
+                                         ylab = FALSE,
+                                         fill = "Component",
+                                         orientation = c("horizontal"),
+                                         #fill = "measure",
+                                         position=position_dodge(0.7),
+                                         label = anova.melt.comb$PrF.sym,
+                                         lab.size = 9,
+                                         lab.vjust = 0.8,
+                                         lab.hjust = -0.3
+                                         
+) +
+  #stat_pvalue_manual(
+  #  adonis.melt,  label = "PrF.sym", tip.length = 0.01
+  #) +
+  #geom_hline(yintercept = 0.05) +
+  #ggtitle("Capscale dbRDA effect size: all variables") +
+  ylab(expression(R^2~"value")) +
+  scale_fill_jco()
+
+esize.bac.feaces.milk.sec
+
+save(esize.bac.feaces.milk.sec,file="results/effect_size_bac_milk_faeces_secretor.RData")
+```
+
+
+
+
+# RDA plots (using microeco)
+
+```{r}
+meco_dat <- phyloseq2meco(PSB.CSS
+  #transform_sample_counts(PSB, function(x) x / sum(x))
+  )
+
+#Tidy up taxonomy
+meco_dat$tax_table <- tidy_taxonomy(meco_dat$tax_table)
+
+meco_dat$tax_table
+
+# Remove "[" and "]" from the Genus column
+meco_dat$tax_table$Genus <- gsub("\\[|\\]", "", meco_dat$tax_table$Genus)
+
+# Remove everything after the first "_" (including the "_")
+meco_dat$tax_table$Genus <- gsub("(([^_]*_){2}[^_]*)_*.*", "\\1", meco_dat$tax_table$Genus)
+
+meco_dat$tax_table$Genus
+
+#Calculate relative abundences
+meco_dat$cal_abund()
+
+#Set days as factor
+meco_dat$sample_table$Days <- as.factor(meco_dat$sample_table$Days)
+
+#Calculta beta diversity metrics
+
+meco_dat$cal_betadiv(unifrac = TRUE)
+
+#Subset milk samples
+meco_milk <- clone(meco_dat)
+
+meco_milk$sample_table <- subset(meco_dat$sample_table, Sample.type == "Milk")
+
+meco_milk$tidy_dataset()
+
+#Subset faecal samples
+meco_faec <- clone(meco_dat)
+
+meco_faec$sample_table <- subset(meco_dat$sample_table, Sample.type == "Faecal sample")
+
+meco_faec$tidy_dataset()
+
+```
+
+## Milk
+
+### RDA plot
+
+```{r, warning = F}
+#Creating trans_env object 
+# env <- select(meco_milk$sample_table,all_of(
+#   c(effect.size.variables[-c(1:2)],"Secretor","Lewis")
+#   )) %>%
+#   mutate(Days = as.numeric(as.character(Days)),
+#          Secretor = as.numeric(as.character(Secretor)),
+#          Lewis = as.numeric(as.character(Lewis)),) %>%
+#   select(-c("AB.infant")) %>%
+#   select(where(is.numeric)) %>%
+#   drop_na(Gestational.age) %>%
+#   drop_na() %>%
+#   select(where(~ !any(is.na(.))))
+
+load("results/effect_size_bac_milk_faeces.RData")
+
+#Select most significant variables
+top.milk.vars <- anova.melt.comb %>%
+ dplyr::filter(Component == "Milk bacteria") %>%
+  arrange(-value) %>%
+  slice_head(n = 10)
+
+
+
+env <- select(meco_milk$sample_table,all_of(c(top.milk.vars$Variable,"Days"))) %>%
+  mutate(Days = as.numeric(as.character(Days))
+         ) %>%
+         #Secretor = as.numeric(as.character(Secretor)),
+         #Lewis = as.numeric(as.character(Lewis)),) %>%
+  #select(-c("AB.infant")) %>%
+  select(where(is.numeric)) %>%
+  #drop_na(Gestational.age) %>%
+  drop_na() %>%
+  select(where(~ !any(is.na(.))))
+
+colnames(env) <- str_replace_all(colnames(env), c("\\." = " ",
+                                                              `BMI delta`="delta BMI",
+                                                              delta="Δ",
+                                                              `3m`="3 months",
+                                                              waz = "WAZ",
+                                                              whz = "WHZ",
+                                                              haz = "HAZ",
+                                                              AB="Antibiotics",
+                                                              GDM="Gestational diabetes",
+                                                              Secretor="Secretor status",
+                                                              Lewis="Lewis status")
+)
+  
+t1 <- trans_env$new(dataset = meco_milk,
+                    add_data = env)
+```
+
+```{r, warning = F}
+# use bray-curtis distance for dbRDA
+t1$cal_ordination(method ="RDA", taxa_level = "Genus",scale_species = TRUE)
+# t1$res_rda is the result list stored in the object
+t1$trans_ordination(adjust_arrow_length = TRUE,
+                    min_perc_env = 0.2,
+                    max_perc_env = 1,
+                    min_perc_tax = 2,
+                    max_perc_tax = 4.5)
+# t1$res_rda_trans is the transformed result for plotting
+sl(rda.plot.milk,
+   t1$plot_ordination(plot_color = "Days",
+                   plot_type = c("point"),
+                   env_text_size = 4,
+                   taxa_text_size = 4,
+                   taxa_text_color="darkred",
+                   taxa_arrow_color="darkred",
+                   point_alpha=0.2,
+                   taxa_nudge_x = c(0, # Staph
+                                    -5, # Lactobac
+                                    -3, # Gemella
+                                    0, # Strept
+                                    0, # Bifido
+                                    0, # Bacteroides
+                                    0, #Pseudo
+                                    4, # Blautia
+                                    0, # Faecali
+                                    0), #Acineto
+                   taxa_nudge_y = c(-2, # Staph
+                                    1, # Lactobac
+                                    -1, # Gemella
+                                    0.01, # Strept
+                                    -5, # Bifido
+                                    2, # Bacteroides
+                                    1, #Pseudo
+                                    0, # Blautia
+                                    1, # Faecali
+                                    0) #Acineto
+                   )+
+  ggrepel::geom_text_repel(force=100),
+  overwrite = TRUE
+)
+
+rda.plot.milk
+
+# plot(rda.plot.milk) +
+#   ggrepel::geom_text_repel(force=100)
+
+```
+
+```{r,eval=FALSE}
+t1$cal_ordination_anova()
+
+head(t1$res_ordination_terms)
+head(t1$res_ordination_axis)
+```
+
+```{r,eval=FALSE}
+t1$cal_ordination_envfit()
+
+head(t1$object$res_ordination_envfit)
+```
+
+## Faecal samples
+
+Creating trans_env object 
+
+```{r, warning = F}
+# env <- select(meco_faec$sample_table,all_of(
+#   c(effect.size.variables[-c(1:2)],"Secretor","Lewis")
+#   )) %>%
+#   mutate(Days = as.numeric(as.character(Days)),
+#          Secretor = as.numeric(as.character(Secretor)),
+#          Lewis = as.numeric(as.character(Lewis)),) %>%
+#   select(-c("AB.infant")) %>%
+#   select(where(is.numeric)) %>%
+#   drop_na(Gestational.age) %>%
+#   drop_na() %>%
+#   select(where(~ !any(is.na(.))))
+
+load("results/effect_size_bac_milk_faeces.RData")
+
+#Select most significant variables
+top.faec.vars <- anova.melt.comb %>%
+ dplyr::filter(Component == "Faecal bacteria") %>%
+  arrange(-value) %>%
+  slice_head(n = 10)
+
+
+
+env <- select(meco_faec$sample_table,all_of(c(top.faec.vars$Variable,"Days"))) %>%
+  mutate(Days = as.numeric(as.character(Days)),
+         #Secretor = as.numeric(as.character(Secretor))
+         #Lewis = as.numeric(as.character(Lewis)),
+         ) %>%
+  #select(-c("AB.infant")) %>%
+  select(where(is.numeric)) %>%
+  #drop_na(Gestational.age) %>%
+  drop_na() %>%
+  select(where(~ !any(is.na(.))))
+
+colnames(env) <- str_replace_all(colnames(env), c("\\." = " ",
+                                                              `BMI delta`="delta BMI",
+                                                              delta="Δ",
+                                                              `3m`="3 months",
+                                                              waz = "WAZ",
+                                                              whz = "WHZ",
+                                                              haz = "HAZ",
+                                                              AB="Antibiotics",
+                                                              GDM="Gestational diabetes",
+                                                              Secretor="Secretor status",
+                                                              Lewis="Lewis status")
+)
+  
+t1 <- trans_env$new(dataset = meco_faec,
+                    add_data = env)
+```
+
+### RDA plot
+
+```{r, warning = F}
+# use bray-curtis distance for dbRDA
+t1$cal_ordination(method ="RDA",scale_species = TRUE)
+# t1$res_rda is the result list stored in the object
+t1$trans_ordination(adjust_arrow_length = TRUE,
+                    min_perc_env = 0.2,
+                    max_perc_env = 1.5,
+                    min_perc_tax = 2,
+                    max_perc_tax = 3.5)
+# t1$res_rda_trans is the transformed result for plotting
+sl(rda.plot.faec,
+   t1$plot_ordination(plot_color = "Days",
+                   plot_type = c("point"),
+                   env_text_size = 4,
+                   taxa_text_size = 4,
+                   taxa_text_color="darkred",
+                   taxa_arrow_color="darkred",
+                   point_alpha=0.2,
+                   taxa_nudge_x = c(0,#Bifido
+                                    0, #Bacteroides
+                                    0, #Parabac
+                                    0, #Strepto
+                                    0, #E. col
+                                    0, #Clostri
+                                    0, #Veillo
+                                    -5, #Ruminococc
+                                    0, #Klebsiella
+                                    0), # Collinsella
+                   taxa_nudge_y = c(-2,#Bifido
+                                    5, #Bacteroides
+                                    -3, #Parabac
+                                    0, #Strepto
+                                    -7, #E. col
+                                    -1, #Clostri
+                                    3, #Veillo
+                                    -0.001, #Ruminococc
+                                    2, #Klebsiella
+                                    -1) # Collinsella
+                   )+
+  ggrepel::geom_label_repel(force=500),
+  overwrite = TRUE
+)
+
+rda.plot.faec
+```
+
+# Upset plots
+
+## Milk
+
+### Over time
+
+```{r}
+load("0.3_deduplicated_and_decontaminated.RData")
+
+
+#devtools::install_github("hms-dbmi/UpSetR")
+library("MicrobiotaProcess")
+
+
+ps <- subset_samples(PSB.rar, Sample.type == "Milk", )
+ps@sam_data$Days <- as.factor(ps@sam_data$Days)
+
+# vennlist <- get_vennlist(obj=ps, factorNames="Days")
+
+upsetda <- get_upset(obj=ps, factorNames="Days")
+
+# vennp <- venn.diagram(vennlist,
+#                       height=5,
+#                       width=5, 
+#                       filename=NULL, 
+#                       #fill=col_fil,
+#                       #cat.col=col_fil,
+#                       alpha = 0.85, 
+#                       fontfamily = "serif",
+#                       fontface = "bold",
+#                       cex = 1.2,
+#                       cat.cex = 1.3,
+#                       cat.default.pos = "outer",
+#                       cat.dist=0.1,
+#                       margin = 0.1, 
+#                       lwd = 3,
+#                       lty ='dotted',
+#                       imagetype = "svg")
+# grid::grid.draw(vennp)
+
+sl(upset.milk.time,
+   upset(upsetda, sets=unique(as.vector(sample_data(ps)$Group)), 
+      sets.bar.color = "#56B4E9",
+      order.by = "freq", 
+      empty.intersections = "on")
+   ,overwrite = T)
+
+upset.milk.time
+```
+
+## Faeces
+
+### Over time
+
+```{r}
+load("0.3_deduplicated_and_decontaminated.RData")
+
+library("MicrobiotaProcess")
+
+ps <- subset_samples(PSB.rar, Sample.type == "Faecal sample", )
+ps <- subset_samples(ps, !is.na(Days))
+ps@sam_data$Days <- factor(ps@sam_data$Days,levels=c("30","60","90"))
+
+# vennlist <- get_vennlist(obj=ps, factorNames="Days")
+upsetda <- get_upset(obj=ps, factorNames="Days")
+
+# vennp <- venn.diagram(vennlist,
+#                       height=5,
+#                       width=5, 
+#                       filename=NULL, 
+#                       #fill=col_fil,
+#                       #cat.col=col_fil,
+#                       alpha = 0.85, 
+#                       fontfamily = "serif",
+#                       fontface = "bold",
+#                       cex = 1.2,
+#                       cat.cex = 1.3,
+#                       cat.default.pos = "outer",
+#                       cat.dist=0.1,
+#                       margin = 0.1, 
+#                       lwd = 3,
+#                       lty ='dotted',
+#                       imagetype = "svg")
+# grid::grid.draw(vennp)
+
+sl(upset.faeces.time,
+   upset(upsetda, sets=unique(as.vector(sample_data(ps)$Group)), 
+      sets.bar.color = "#56B4E9",
+      order.by = "freq", 
+      empty.intersections = "on")
+   ,overwrite = T)
+
+upset.faeces.time
+
+library(ggplotify)
+
+cowplot::plot_grid(as.ggplot(upset.milk.time),as.ggplot(upset.faeces.time))
+```
+
+Unload MicrobiotaProcess to avoid phyloseq conflicts in other sections
+
+```{r}
+detach(package:MicrobiotaProcess, unload=TRUE)
+```
+
+
+# Session info
+
+```{r}
+sessionInfo()
+```
